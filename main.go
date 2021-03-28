@@ -4,6 +4,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"log"
 	"os"
 
 	"github.com/gdamore/tcell/v2"
@@ -13,7 +15,21 @@ import (
 const tabWidth = 8
 
 func main() {
+	log.SetOutput(io.Discard)
+
+	logFile := flag.String("log", "", "if not empty, debug log output is written to this file")
+
 	flag.Parse()
+
+	if *logFile != "" {
+		f, err := os.OpenFile(*logFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			fmt.Printf("Failed to open log file %s for writing: %v\n", *logFile, err)
+			os.Exit(1)
+		}
+		defer f.Close()
+		log.SetOutput(f)
+	}
 
 	ed := &editor{}
 
@@ -45,6 +61,11 @@ func main() {
 	ops := []keyMapping{
 		{tcell.KeyCtrlA, ed.gotoBOL, "go to beginning of line"},
 		{tcell.KeyCtrlE, ed.gotoEOL, "go to end of line"},
+		{tcell.KeyCR, ed.newLine, "insert new line"},
+		{tcell.KeyUp, ed.keyUp, "go to previous line"},
+		{tcell.KeyDown, ed.keyDown, "go to next line"},
+		{tcell.KeyLeft, ed.keyLeft, "go to previous character"},
+		{tcell.KeyRight, ed.keyRight, "go to next character"},
 		{tcell.KeyCtrlQ, ed.quit, "quit"},
 	}
 
@@ -66,7 +87,7 @@ func main() {
 					continue
 				}
 			}
-			if e.Modifiers() == 0 {
+			if e.Modifiers() == 0 && e.Rune() != '\r' && e.Rune() != 0 {
 				ed.handleInput(e.Rune())
 			}
 		}
@@ -123,6 +144,73 @@ func (e *editor) gotoEOL() {
 	curBuf.x = len(curLine)
 }
 
+func (e *editor) newLine() {
+	curBuf := e.bufs[e.bufIdx]
+	lineIdx := curBuf.y + curBuf.offset
+
+	curLine, nextLine := curBuf.lines[lineIdx][:curBuf.x], curBuf.lines[lineIdx][curBuf.x:]
+	log.Printf("newLine: %q -> %q, %q", string(curBuf.lines[lineIdx]), string(curLine), string(nextLine))
+	curBuf.lines[lineIdx] = curLine
+	curBuf.lines = append(curBuf.lines[:lineIdx+1], append([][]rune{nextLine}, curBuf.lines[lineIdx+1:]...)...)
+
+	e.keyDown()
+	curBuf.x = 0
+}
+
+func (e *editor) keyUp() {
+	curBuf := e.bufs[e.bufIdx]
+
+	if (curBuf.y + curBuf.offset) == 0 {
+		return
+	}
+
+	if curBuf.offset > 0 {
+		curBuf.offset--
+	} else {
+		curBuf.y--
+	}
+
+	if l := len(curBuf.lines[curBuf.y+curBuf.offset]); curBuf.x > l {
+		curBuf.x = l
+	}
+}
+
+func (e *editor) keyDown() {
+	curBuf := e.bufs[e.bufIdx]
+
+	if (curBuf.y + curBuf.offset) >= len(curBuf.lines)-1 {
+		return
+	}
+
+	_, height := e.scr.Size()
+
+	if curBuf.y >= height-1 {
+		curBuf.offset++
+	} else {
+		curBuf.y++
+	}
+
+	if l := len(curBuf.lines[curBuf.y+curBuf.offset]); curBuf.x > l {
+		curBuf.x = l
+	}
+}
+
+func (e *editor) keyLeft() {
+	curBuf := e.bufs[e.bufIdx]
+
+	if curBuf.x > 0 {
+		curBuf.x--
+	}
+}
+
+func (e *editor) keyRight() {
+	curBuf := e.bufs[e.bufIdx]
+
+	if len(curBuf.lines[curBuf.y+curBuf.offset]) < curBuf.x {
+		curBuf.x++
+	}
+}
+
 func (e *editor) quit() {
 	// TODO: check whether files need saving or something.
 	e.quitInputLoop = true
@@ -134,7 +222,6 @@ func (e *editor) redrawScreen() {
 	curBuf := e.bufs[e.bufIdx]
 
 	for i := curBuf.offset; i < curBuf.offset+height-1; i++ {
-		fmt.Fprintf(os.Stderr, "redraw: i = %d\n", i)
 		e.drawLine(curBuf, i-curBuf.offset, i, width, i == curBuf.offset+curBuf.y)
 	}
 
@@ -143,11 +230,14 @@ func (e *editor) redrawScreen() {
 	e.drawStatus(height-1, width)
 
 	e.scr.Show()
+
+	for i := 0; i < len(curBuf.lines); i++ {
+		log.Printf("redrawScreen: line %d = %q\n", i, string(curBuf.lines[i]))
+	}
 }
 
 func (e *editor) drawLine(buf *buffer, y int, lineIdx int, width int, curLine bool) {
 	if len(buf.lines) <= lineIdx {
-		fmt.Fprintf(os.Stderr, "drawLine: drawing past file y = %d, lineIdx = %d\n", y, lineIdx)
 		e.scr.SetCell(0, y, tcell.StyleDefault.Bold(true), '~')
 		for i := 1; i < width; i++ {
 			e.scr.SetCell(i, y, tcell.StyleDefault, ' ')
