@@ -1,0 +1,3 @@
+TODO list:
+- implement all features from yocto
+- fix handling of tabs in files when rendering and when moving cursor around

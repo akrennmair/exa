@@ -1,7 +1,7 @@
 package main
 
 import (
-	"errors"
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -109,7 +109,27 @@ type editor struct {
 }
 
 func (e *editor) loadBufferFromFile(fn string) error {
-	return errors.New("not implemented")
+	f, err := os.Open(fn)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+
+	buf := &buffer{}
+
+	for scanner.Scan() {
+		buf.lines = append(buf.lines, []rune(scanner.Text()))
+	}
+
+	if len(buf.lines) == 0 {
+		buf.lines = [][]rune{{}}
+	}
+
+	e.bufs = append(e.bufs, buf)
+
+	return nil
 }
 
 func (e *editor) addNewBuffer() {
@@ -130,6 +150,8 @@ func (e *editor) handleInput(r rune) {
 	}
 	curBuf.lines[lineIdx] = curLine
 	curBuf.x++
+
+	curBuf.modified = true
 }
 
 func (e *editor) gotoBOL() {
