@@ -66,6 +66,8 @@ func main() {
 		{tcell.KeyDown, ed.keyDown, "go to next line"},
 		{tcell.KeyLeft, ed.keyLeft, "go to previous character"},
 		{tcell.KeyRight, ed.keyRight, "go to next character"},
+		{tcell.KeyDEL, ed.keyBackspace, "delete character left from cursor"},
+		{tcell.KeyDelete, ed.keyDel, "delete character right from cursor"},
 		{tcell.KeyCtrlQ, ed.quit, "quit"},
 	}
 
@@ -81,13 +83,20 @@ func main() {
 		case *tcell.EventResize:
 			continue
 		case *tcell.EventKey:
+			log.Printf("event key: %v rune = %d mod = %b", e.Key(), e.Rune(), e.Modifiers())
+			matched := false
 			for _, op := range ops {
 				if e.Key() == op.Key {
 					op.Func()
-					continue
+					matched = true
+					break
 				}
 			}
-			if e.Modifiers() == 0 && e.Rune() != '\r' && e.Rune() != 0 {
+			if matched {
+				continue
+			}
+
+			if e.Modifiers() == 0 && e.Rune() >= 32 && e.Rune() != 127 {
 				ed.handleInput(e.Rune())
 			}
 		}
@@ -179,6 +188,50 @@ func (e *editor) newLine() {
 	curBuf.x = 0
 }
 
+func (e *editor) keyBackspace() {
+	curBuf := e.bufs[e.bufIdx]
+	lineIdx := curBuf.y + curBuf.offset
+
+	if curBuf.x == 0 {
+		if lineIdx == 0 {
+			// nothing that can be done as we're on the leftmost character on the first line.
+			return
+		}
+
+		curBuf.x = len(curBuf.lines[lineIdx-1])
+		curBuf.lines[lineIdx-1] = append(curBuf.lines[lineIdx-1], curBuf.lines[lineIdx]...)
+		curBuf.lines = append(curBuf.lines[:lineIdx], curBuf.lines[lineIdx+1:]...)
+
+		if curBuf.offset > 0 {
+			curBuf.offset--
+		} else {
+			curBuf.y--
+		}
+		return
+	}
+
+	curBuf.lines[lineIdx] = append(curBuf.lines[lineIdx][:curBuf.x-1], curBuf.lines[lineIdx][curBuf.x:]...)
+	curBuf.x--
+}
+
+func (e *editor) keyDel() {
+	curBuf := e.bufs[e.bufIdx]
+	lineIdx := curBuf.y + curBuf.offset
+
+	if curBuf.x == len(curBuf.lines[lineIdx]) {
+		if lineIdx == len(curBuf.lines)-1 {
+			// nothing that can be done, as we're on the last character on the last line
+			return
+		}
+
+		curBuf.lines[lineIdx] = append(curBuf.lines[lineIdx], curBuf.lines[lineIdx+1]...)
+		curBuf.lines = append(curBuf.lines[:lineIdx+1], curBuf.lines[lineIdx+2:]...)
+		return
+	}
+
+	curBuf.lines[lineIdx] = append(curBuf.lines[lineIdx][:curBuf.x], curBuf.lines[lineIdx][curBuf.x+1:]...)
+}
+
 func (e *editor) keyUp() {
 	curBuf := e.bufs[e.bufIdx]
 
@@ -228,7 +281,7 @@ func (e *editor) keyLeft() {
 func (e *editor) keyRight() {
 	curBuf := e.bufs[e.bufIdx]
 
-	if len(curBuf.lines[curBuf.y+curBuf.offset]) < curBuf.x {
+	if len(curBuf.lines[curBuf.y+curBuf.offset]) > curBuf.x {
 		curBuf.x++
 	}
 }
