@@ -61,6 +61,7 @@ func main() {
 	ops := []keyMapping{
 		{tcell.KeyCtrlA, ed.gotoBOL, "go to beginning of line"},
 		{tcell.KeyCtrlE, ed.gotoEOL, "go to end of line"},
+		{tcell.KeyCtrlL, ed.redraw, "redraw screen"},
 		{tcell.KeyCR, ed.newLine, "insert new line"},
 		{tcell.KeyUp, ed.keyUp, "go to previous line"},
 		{tcell.KeyDown, ed.keyDown, "go to next line"},
@@ -322,6 +323,10 @@ func strwidth(s []rune) (w int) {
 		}
 	}
 	return w
+}
+
+func (e *editor) redraw() {
+	e.scr.Sync()
 }
 
 func (e *editor) drawLine(buf *buffer, y int, lineIdx int, width int, curLine bool) {
