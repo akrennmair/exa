@@ -96,7 +96,7 @@ func main() {
 				continue
 			}
 
-			if e.Modifiers() == 0 && e.Rune() >= 32 && e.Rune() != 127 {
+			if e.Modifiers() == 0 && (e.Rune() >= 32 && e.Rune() != 127) || e.Rune() == '\t' {
 				ed.handleInput(e.Rune())
 			}
 		}
@@ -300,7 +300,9 @@ func (e *editor) redrawScreen() {
 		e.drawLine(curBuf, i-curBuf.offset, i, width, i == curBuf.offset+curBuf.y)
 	}
 
-	e.scr.ShowCursor(curBuf.x, curBuf.y)
+	x := strwidth(curBuf.lines[curBuf.y+curBuf.offset][:curBuf.x])
+
+	e.scr.ShowCursor(x, curBuf.y)
 
 	e.drawStatus(height-1, width)
 
@@ -309,6 +311,17 @@ func (e *editor) redrawScreen() {
 	for i := 0; i < len(curBuf.lines); i++ {
 		log.Printf("redrawScreen: line %d = %q\n", i, string(curBuf.lines[i]))
 	}
+}
+
+func strwidth(s []rune) (w int) {
+	for _, r := range s {
+		if r == '\t' {
+			w += tabWidth
+		} else {
+			w += runewidth.RuneWidth(r)
+		}
+	}
+	return w
 }
 
 func (e *editor) drawLine(buf *buffer, y int, lineIdx int, width int, curLine bool) {
