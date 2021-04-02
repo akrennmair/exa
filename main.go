@@ -61,10 +61,12 @@ func main() {
 	ops := []keyMapping{
 		{tcell.KeyCtrlA, ed.gotoBOL, "go to beginning of line"},
 		{tcell.KeyCtrlE, ed.gotoEOL, "go to end of line"},
+		{tcell.KeyCtrlK, ed.deleteToEOL, "delete text to end of line"},
 		{tcell.KeyCtrlL, ed.redraw, "redraw screen"},
 		{tcell.KeyCtrlN, ed.nextBuffer, "go to next file"},
 		{tcell.KeyCtrlP, ed.prevBuffer, "go to previous file"},
 		{tcell.KeyCtrlS, ed.save, "save file"},
+		{tcell.KeyCtrlU, ed.deleteFromBOL, "delete text from beginning of line"},
 		{tcell.KeyCtrlW, ed.saveAs, "save file as"},
 		{tcell.KeyCR, ed.newLine, "insert new line"},
 		{tcell.KeyUp, ed.keyUp, "go to previous line"},
@@ -380,6 +382,19 @@ func (e *editor) prevBuffer() {
 	if e.bufIdx < 0 {
 		e.bufIdx = len(e.bufs) - 1
 	}
+}
+
+func (e *editor) deleteToEOL() {
+	curBuf := e.bufs[e.bufIdx]
+
+	curBuf.lines[curBuf.y+curBuf.offset] = curBuf.lines[curBuf.y+curBuf.offset][:curBuf.x]
+}
+
+func (e *editor) deleteFromBOL() {
+	curBuf := e.bufs[e.bufIdx]
+
+	curBuf.lines[curBuf.y+curBuf.offset] = curBuf.lines[curBuf.y+curBuf.offset][curBuf.x:]
+	curBuf.x = 0
 }
 
 func (e *editor) showError(s string, args ...interface{}) {
