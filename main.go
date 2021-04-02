@@ -62,6 +62,8 @@ func main() {
 		{tcell.KeyCtrlA, ed.gotoBOL, "go to beginning of line"},
 		{tcell.KeyCtrlE, ed.gotoEOL, "go to end of line"},
 		{tcell.KeyCtrlL, ed.redraw, "redraw screen"},
+		{tcell.KeyCtrlN, ed.nextBuffer, "go to next file"},
+		{tcell.KeyCtrlP, ed.prevBuffer, "go to previous file"},
 		{tcell.KeyCtrlS, ed.save, "save file"},
 		{tcell.KeyCtrlW, ed.saveAs, "save file as"},
 		{tcell.KeyCR, ed.newLine, "insert new line"},
@@ -99,7 +101,7 @@ func main() {
 				continue
 			}
 
-			if e.Key() == tcell.KeyRune {
+			if e.Key() == tcell.KeyRune || e.Key() == tcell.KeyTAB {
 				ed.handleInput(e.Rune())
 			}
 		}
@@ -261,10 +263,10 @@ func (e *editor) keyDown() {
 
 	_, height := e.scr.Size()
 
-	if curBuf.y >= height-2 {
-		curBuf.offset++
-	} else {
+	if curBuf.y < height-3 {
 		curBuf.y++
+	} else {
+		curBuf.offset++
 	}
 
 	if l := len(curBuf.lines[curBuf.y+curBuf.offset]); curBuf.x > l {
@@ -289,7 +291,22 @@ func (e *editor) keyRight() {
 }
 
 func (e *editor) quit() {
-	// TODO: check whether files need saving or something.
+	for i := 0; i < len(e.bufs); i++ {
+		e.bufIdx = i
+		if e.bufs[e.bufIdx].modified {
+			e.redrawScreen()
+			switch e.query("Save file?", "ync") {
+			case 'y':
+				e.save()
+			case 'n':
+				// ignore file.
+			case 'c':
+				return // cancel quitting.
+			}
+		}
+	}
+
+	// all files checked whether user wants to save them -> quit
 	e.quitInputLoop = true
 }
 
@@ -349,6 +366,20 @@ func (e *editor) saveAs() {
 	curBuf.fname = fname
 
 	e.saveFile(curBuf)
+}
+
+func (e *editor) nextBuffer() {
+	e.bufIdx++
+	if e.bufIdx >= len(e.bufs) {
+		e.bufIdx = 0
+	}
+}
+
+func (e *editor) prevBuffer() {
+	e.bufIdx--
+	if e.bufIdx < 0 {
+		e.bufIdx = len(e.bufs) - 1
+	}
 }
 
 func (e *editor) showError(s string, args ...interface{}) {
@@ -591,13 +622,17 @@ func (e *editor) drawStatus(y int, width int) {
 		status += curBuf.fname + " "
 	}
 
-	status += fmt.Sprintf("[%d|%d]", curBuf.y, curBuf.x)
+	status += fmt.Sprintf("(%d of %d) [%d|%d-%d]", e.bufIdx+1, len(e.bufs), curBuf.y+curBuf.offset, curBuf.x, strwidth(curBuf.lines[curBuf.y+curBuf.offset][:curBuf.x]))
 
 	statusStyle := tcell.StyleDefault.Reverse(true)
 
 	e.clearLine(y, width, statusStyle)
 
-	e.scr.SetCell(0, y, statusStyle, []rune(status)...)
+	x := 0
+	for _, r := range status {
+		e.scr.SetContent(x, y, r, nil, statusStyle)
+		x += runewidth.RuneWidth(r)
+	}
 }
 
 type buffer struct {
