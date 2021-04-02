@@ -62,6 +62,8 @@ func main() {
 		{tcell.KeyCtrlA, ed.gotoBOL, "go to beginning of line"},
 		{tcell.KeyCtrlE, ed.gotoEOL, "go to end of line"},
 		{tcell.KeyCtrlL, ed.redraw, "redraw screen"},
+		{tcell.KeyCtrlS, ed.save, "save file"},
+		{tcell.KeyCtrlW, ed.saveAs, "save file as"},
 		{tcell.KeyCR, ed.newLine, "insert new line"},
 		{tcell.KeyUp, ed.keyUp, "go to previous line"},
 		{tcell.KeyDown, ed.keyDown, "go to next line"},
@@ -97,12 +99,11 @@ func main() {
 				continue
 			}
 
-			if e.Modifiers() == 0 && (e.Rune() >= 32 && e.Rune() != 127) || e.Rune() == '\t' {
+			if e.Key() == tcell.KeyRune {
 				ed.handleInput(e.Rune())
 			}
 		}
 	}
-
 }
 
 type keyMapping struct {
@@ -127,7 +128,7 @@ func (e *editor) loadBufferFromFile(fn string) error {
 
 	scanner := bufio.NewScanner(f)
 
-	buf := &buffer{}
+	buf := &buffer{fname: fn}
 
 	for scanner.Scan() {
 		buf.lines = append(buf.lines, []rune(scanner.Text()))
@@ -260,7 +261,7 @@ func (e *editor) keyDown() {
 
 	_, height := e.scr.Size()
 
-	if curBuf.y >= height-1 {
+	if curBuf.y >= height-2 {
 		curBuf.offset++
 	} else {
 		curBuf.y++
@@ -292,12 +293,221 @@ func (e *editor) quit() {
 	e.quitInputLoop = true
 }
 
+func (e *editor) save() {
+	curBuf := e.bufs[e.bufIdx]
+
+	if curBuf.fname == "" {
+		fname, ok := e.readString("Filename")
+		if !ok {
+			return
+		}
+
+		curBuf.fname = fname
+	}
+
+	e.saveFile(curBuf)
+}
+
+func (e *editor) saveFile(curBuf *buffer) {
+	f, err := os.OpenFile(curBuf.fname, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		e.showError("Failed to write file: %v", err)
+		return
+	}
+	defer f.Close()
+
+	w := bufio.NewWriter(f)
+	for _, line := range curBuf.lines {
+		w.WriteString(string(line) + "\n") // TODO: handle error better, maybe write to temporary file, then move?
+	}
+	if err := w.Flush(); err != nil {
+		e.showError("Failed to write file content: %v", err)
+		return
+	}
+
+	curBuf.modified = false
+}
+
+func (e *editor) saveAs() {
+	curBuf := e.bufs[e.bufIdx]
+
+	fname, ok := e.readString("New filename")
+	if !ok {
+		return
+	}
+
+	_, err := os.Stat(fname)
+	if err == nil {
+		switch e.query("Are you sure you want to overwrite file?", "yn") {
+		case 'y':
+			// continue as normal
+		case 'n':
+			return
+		}
+	}
+
+	curBuf.fname = fname
+
+	e.saveFile(curBuf)
+}
+
+func (e *editor) showError(s string, args ...interface{}) {
+	str := fmt.Sprintf(s, args...)
+
+	width, height := e.scr.Size()
+
+	e.clearLine(height-1, width, tcell.StyleDefault)
+
+	e.scr.SetCell(0, height-1, tcell.StyleDefault, []rune(str)...)
+}
+
+func (e *editor) readString(prompt string) (input string, ok bool) {
+	var (
+		inputRunes []rune
+		cursorPos  = 0
+	)
+
+	defer func() {
+		width, height := e.scr.Size()
+		e.clearLine(height-1, width, tcell.StyleDefault)
+	}()
+
+	prompt += ": "
+
+	for {
+		width, height := e.scr.Size()
+
+		e.clearLine(height-1, width, tcell.StyleDefault)
+
+		promptStyle := tcell.StyleDefault.Bold(true)
+
+		x := 0
+		for _, r := range prompt {
+			e.scr.SetContent(x, height-1, r, nil, promptStyle)
+			x += runewidth.RuneWidth(r)
+		}
+
+		i := 0
+		inputx := x
+
+		cursorPosFound := false
+
+		for _, r := range inputRunes {
+			log.Printf("readString: i = %d cursorPos = %d r = %c", i, cursorPos, r)
+			if i == cursorPos {
+				log.Printf("readString: showing cursor at x = %d y = %d", inputx, height-1)
+				e.scr.ShowCursor(inputx, height-1)
+				cursorPosFound = true
+			}
+
+			e.scr.SetContent(inputx, height-1, r, nil, tcell.StyleDefault)
+
+			i++
+			inputx += runewidth.RuneWidth(r)
+		}
+
+		if !cursorPosFound {
+			e.scr.ShowCursor(inputx, height-1)
+		}
+
+		e.scr.Show()
+
+		evt := e.scr.PollEvent()
+		switch ev := evt.(type) {
+		case *tcell.EventResize:
+			e.redrawScreen()
+			continue
+		case *tcell.EventKey:
+			log.Printf("readString: %v rune = %d mod = %b", ev.Key(), ev.Rune(), ev.Modifiers())
+
+			switch ev.Key() {
+			case tcell.KeyCR:
+				return string(inputRunes), true
+			case tcell.KeyESC, tcell.KeyCtrlG:
+				return "", false
+			case tcell.KeyLeft:
+				if cursorPos > 0 {
+					cursorPos--
+				}
+			case tcell.KeyRight:
+				if cursorPos < len(inputRunes) {
+					cursorPos++
+				}
+			case tcell.KeyDEL: // backspace
+				if cursorPos > 0 {
+					inputRunes = append(inputRunes[:cursorPos-1], inputRunes[cursorPos:]...)
+				}
+				cursorPos--
+			case tcell.KeyDelete: // DEL
+				if cursorPos < len(inputRunes) {
+					inputRunes = append(inputRunes[:cursorPos], inputRunes[cursorPos+1:]...)
+				}
+			case tcell.KeyCtrlU:
+				inputRunes = inputRunes[cursorPos:]
+				cursorPos = 0
+			case tcell.KeyCtrlK:
+				inputRunes = inputRunes[:cursorPos]
+			case tcell.KeyCtrlA:
+				cursorPos = 0
+			case tcell.KeyCtrlE:
+				cursorPos = len(inputRunes)
+			case tcell.KeyRune:
+				log.Printf("readString: rune input: %[1]c (%[1]d)", ev.Rune())
+				inputRunes = append(inputRunes[:cursorPos], append([]rune{ev.Rune()}, inputRunes[cursorPos:]...)...)
+				cursorPos++
+			}
+		}
+	}
+}
+
+func (e *editor) query(prompt string, validAnswers string) rune {
+	defer func() {
+		width, height := e.scr.Size()
+		e.clearLine(height-1, width, tcell.StyleDefault)
+	}()
+
+	prompt += " [" + validAnswers + "]"
+
+	for {
+		width, height := e.scr.Size()
+
+		e.clearLine(height-1, width, tcell.StyleDefault)
+
+		promptStyle := tcell.StyleDefault.Bold(true)
+
+		x := 0
+		for _, r := range prompt {
+			e.scr.SetContent(x, height-1, r, nil, promptStyle)
+			x += runewidth.RuneWidth(r)
+		}
+
+		e.scr.ShowCursor(x, height-1)
+
+		e.scr.Show()
+
+		evt := e.scr.PollEvent()
+		switch ev := evt.(type) {
+		case *tcell.EventResize:
+			e.redrawScreen()
+			continue
+		case *tcell.EventKey:
+			if ev.Key() == tcell.KeyRune {
+				for _, r := range validAnswers {
+					if r == ev.Rune() {
+						return r
+					}
+				}
+			}
+		}
+	}
+}
+
 func (e *editor) redrawScreen() {
 	width, height := e.scr.Size()
 
 	curBuf := e.bufs[e.bufIdx]
 
-	for i := curBuf.offset; i < curBuf.offset+height-1; i++ {
+	for i := curBuf.offset; i < curBuf.offset+height-2; i++ {
 		e.drawLine(curBuf, i-curBuf.offset, i, width, i == curBuf.offset+curBuf.y)
 	}
 
@@ -305,9 +515,11 @@ func (e *editor) redrawScreen() {
 
 	e.scr.ShowCursor(x, curBuf.y)
 
-	e.drawStatus(height-1, width)
+	e.drawStatus(height-2, width)
 
 	e.scr.Show()
+
+	e.clearLine(height-1, width, tcell.StyleDefault)
 
 	for i := 0; i < len(curBuf.lines); i++ {
 		log.Printf("redrawScreen: line %d = %q\n", i, string(curBuf.lines[i]))
@@ -385,11 +597,7 @@ func (e *editor) drawStatus(y int, width int) {
 
 	e.clearLine(y, width, statusStyle)
 
-	x := 0
-	for _, r := range status {
-		e.scr.SetCell(x, y, statusStyle, r)
-		x += runewidth.RuneWidth(r)
-	}
+	e.scr.SetCell(0, y, statusStyle, []rune(status)...)
 }
 
 type buffer struct {
