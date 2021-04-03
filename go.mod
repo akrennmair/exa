@@ -1,4 +1,4 @@
-module github.com/akrennmair/yolo
+module github.com/akrennmair/exa
 
 go 1.16
 
