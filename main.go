@@ -176,6 +176,7 @@ func (e *editor) handleInput(r rune) {
 
 func (e *editor) gotoBOL() {
 	e.bufs[e.bufIdx].x = 0
+	e.updateSelectedTextPos(e.bufs[e.bufIdx])
 }
 
 func (e *editor) gotoEOL() {
@@ -184,6 +185,8 @@ func (e *editor) gotoEOL() {
 	curLine := curBuf.lines[lineIdx]
 
 	curBuf.x = len(curLine)
+
+	e.updateSelectedTextPos(curBuf)
 }
 
 func (e *editor) newLine() {
@@ -491,13 +494,23 @@ func (e *editor) pasteText() {
 	insertion := [][]rune{}
 	insertion = append(insertion, e.clipboard...)
 
+	for idx, line := range insertion {
+		log.Printf("pasteText: clipboard %d = %s", idx, string(line))
+	}
+
 	curBuf := e.bufs[e.bufIdx]
 	curY := curBuf.y + curBuf.offset
 
 	lastLineX := len(insertion[len(insertion)-1])
 
-	insertion[0] = append(curBuf.lines[curY][:curBuf.x], insertion[0]...)
-	insertion[len(insertion)-1] = append(insertion[len(insertion)-1], curBuf.lines[curY][curBuf.x:]...)
+	beforeInsertion, afterInsertion := curBuf.lines[curY][:curBuf.x], curBuf.lines[curY][curBuf.x:]
+
+	insertion[0] = append(append([]rune{}, beforeInsertion...), insertion[0]...)
+	insertion[len(insertion)-1] = append(insertion[len(insertion)-1], afterInsertion...)
+
+	for idx, line := range insertion {
+		log.Printf("pasteText: insertion %d = %s", idx, string(line))
+	}
 
 	curBuf.lines = append(curBuf.lines[:curY], append(insertion, curBuf.lines[curY+1:]...)...)
 
