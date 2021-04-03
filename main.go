@@ -77,6 +77,8 @@ func main() {
 		{tcell.KeyDown, ed.keyDown, "go to next line"},
 		{tcell.KeyLeft, ed.keyLeft, "go to previous character"},
 		{tcell.KeyRight, ed.keyRight, "go to next character"},
+		{tcell.KeyPgDn, ed.pageDown, "go to next page"},
+		{tcell.KeyPgUp, ed.pageUp, "go to previous page"},
 		{tcell.KeyDEL, ed.keyBackspace, "delete character left from cursor"},
 		{tcell.KeyDelete, ed.keyDel, "delete character right from cursor"},
 		{tcell.KeyCtrlQ, ed.quit, "quit"},
@@ -526,6 +528,48 @@ func (e *editor) pasteText() {
 	curBuf.x = lastLineX
 
 	curBuf.modified = true
+}
+
+func (e *editor) pageDown() {
+	_, height := e.scr.Size()
+
+	curBuf := e.bufs[e.bufIdx]
+
+	for i := 0; i < height-2; i++ {
+		if curBuf.y+curBuf.offset == len(curBuf.lines)-1 {
+			break
+		}
+		if curBuf.y < height-3 {
+			curBuf.y++
+		} else {
+			curBuf.offset++
+		}
+	}
+
+	if l := len(curBuf.lines[curBuf.y+curBuf.offset]); l < curBuf.x {
+		curBuf.x = l
+	}
+}
+
+func (e *editor) pageUp() {
+	_, height := e.scr.Size()
+
+	curBuf := e.bufs[e.bufIdx]
+
+	for i := 0; i < height-2; i++ {
+		if curBuf.y+curBuf.offset == 0 {
+			break
+		}
+		if curBuf.offset > 0 {
+			curBuf.offset--
+		} else {
+			curBuf.y--
+		}
+	}
+
+	if l := len(curBuf.lines[curBuf.y+curBuf.offset]); l < curBuf.x {
+		curBuf.x = l
+	}
 }
 
 func (e *editor) showError(s string, args ...interface{}) {
