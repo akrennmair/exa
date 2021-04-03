@@ -1,3 +1,4 @@
 TODO list:
-- implement all features from yocto
-- properly clear status line, otherwise [0|9]] can appear.
+- ensure that all changes to X/Y+offset are reflected in selection change.
+- test copy/cut/paste more.
+- on paste, move cursor to position past last inserted character.

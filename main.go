@@ -59,7 +59,9 @@ func main() {
 	ed.scr = scr
 
 	ops := []keyMapping{
+		{tcell.KeyCtrlSpace, ed.selectText, "start/stop selecting text"},
 		{tcell.KeyCtrlA, ed.gotoBOL, "go to beginning of line"},
+		{tcell.KeyCtrlC, ed.copyText, "copy selected text to clipboard"},
 		{tcell.KeyCtrlE, ed.gotoEOL, "go to end of line"},
 		{tcell.KeyCtrlK, ed.deleteToEOL, "delete text to end of line"},
 		{tcell.KeyCtrlL, ed.redraw, "redraw screen"},
@@ -67,7 +69,9 @@ func main() {
 		{tcell.KeyCtrlP, ed.prevBuffer, "go to previous file"},
 		{tcell.KeyCtrlS, ed.save, "save file"},
 		{tcell.KeyCtrlU, ed.deleteFromBOL, "delete text from beginning of line"},
+		{tcell.KeyCtrlV, ed.pasteText, "paste text from clipboard"},
 		{tcell.KeyCtrlW, ed.saveAs, "save file as"},
+		{tcell.KeyCtrlX, ed.cutText, "cut selected text to clipboard"},
 		{tcell.KeyCR, ed.newLine, "insert new line"},
 		{tcell.KeyUp, ed.keyUp, "go to previous line"},
 		{tcell.KeyDown, ed.keyDown, "go to next line"},
@@ -121,6 +125,7 @@ type editor struct {
 	scr           tcell.Screen
 	bufIdx        int
 	quitInputLoop bool
+	clipboard     [][]rune
 }
 
 func (e *editor) loadBufferFromFile(fn string) error {
@@ -254,6 +259,8 @@ func (e *editor) keyUp() {
 	if l := len(curBuf.lines[curBuf.y+curBuf.offset]); curBuf.x > l {
 		curBuf.x = l
 	}
+
+	e.updateSelectedTextPos(curBuf)
 }
 
 func (e *editor) keyDown() {
@@ -274,6 +281,8 @@ func (e *editor) keyDown() {
 	if l := len(curBuf.lines[curBuf.y+curBuf.offset]); curBuf.x > l {
 		curBuf.x = l
 	}
+
+	e.updateSelectedTextPos(curBuf)
 }
 
 func (e *editor) keyLeft() {
@@ -282,6 +291,8 @@ func (e *editor) keyLeft() {
 	if curBuf.x > 0 {
 		curBuf.x--
 	}
+
+	e.updateSelectedTextPos(curBuf)
 }
 
 func (e *editor) keyRight() {
@@ -290,6 +301,8 @@ func (e *editor) keyRight() {
 	if len(curBuf.lines[curBuf.y+curBuf.offset]) > curBuf.x {
 		curBuf.x++
 	}
+
+	e.updateSelectedTextPos(curBuf)
 }
 
 func (e *editor) quit() {
@@ -395,6 +408,86 @@ func (e *editor) deleteFromBOL() {
 
 	curBuf.lines[curBuf.y+curBuf.offset] = curBuf.lines[curBuf.y+curBuf.offset][curBuf.x:]
 	curBuf.x = 0
+}
+
+func (e *editor) selectText() {
+	curBuf := e.bufs[e.bufIdx]
+
+	if !curBuf.selecting {
+		curBuf.startX, curBuf.startY = curBuf.x, curBuf.offset+curBuf.y
+		curBuf.endX, curBuf.endY = curBuf.startX, curBuf.startY
+		log.Printf("Started selecting text from %d/%d", curBuf.startY, curBuf.startX)
+	} else {
+		log.Printf("Stopped selecting text at %d/%d", curBuf.endY, curBuf.endX)
+	}
+
+	curBuf.selecting = !curBuf.selecting
+}
+
+func (e *editor) updateSelectedTextPos(buf *buffer) {
+	if buf.selecting {
+		buf.endX, buf.endY = buf.x, buf.offset+buf.y
+		log.Printf("Updated selection end point at %d/%d", buf.endY, buf.endX)
+	}
+}
+
+func (e *editor) copyText() {
+	curBuf := e.bufs[e.bufIdx]
+	curBuf.selecting = false
+
+	lowerY, lowerX, higherY, higherX := sortYX(curBuf.startY, curBuf.startX, curBuf.endY, curBuf.endX)
+
+	copiedData := [][]rune{}
+
+	for y := lowerY; y <= higherY; y++ {
+		var firstX, lastX int
+		if y == lowerY {
+			firstX = lowerX
+			lastX = len(curBuf.lines[y])
+			if lowerY == higherY {
+				lastX = higherX
+			}
+		} else if y == higherY {
+			firstX = 0
+			lastX = higherX
+		} else {
+			firstX = 0
+			lastX = len(curBuf.lines[y])
+		}
+		copiedData = append(copiedData, curBuf.lines[y][firstX:lastX])
+	}
+
+	e.clipboard = copiedData
+}
+
+func (e *editor) cutText() {
+	e.copyText()
+
+	curBuf := e.bufs[e.bufIdx]
+	lowerY, lowerX, higherY, higherX := sortYX(curBuf.startY, curBuf.startX, curBuf.endY, curBuf.endX)
+
+	replacementLine := append(curBuf.lines[lowerY][:lowerX], curBuf.lines[higherY][higherX:]...)
+
+	curBuf.lines = append(curBuf.lines[:lowerY], append([][]rune{replacementLine}, curBuf.lines[higherY+1:]...)...)
+
+	curBuf.startY, curBuf.startX, curBuf.endY, curBuf.endX = 0, 0, 0, 0
+
+	curBuf.modified = true
+}
+
+func (e *editor) pasteText() {
+	insertion := [][]rune{}
+	insertion = append(insertion, e.clipboard...)
+
+	curBuf := e.bufs[e.bufIdx]
+	curY := curBuf.y + curBuf.offset
+
+	insertion[0] = append(curBuf.lines[curY][:curBuf.x], insertion[0]...)
+	insertion[len(insertion)-1] = append(insertion[len(insertion)-1], curBuf.lines[curY][curBuf.x:]...)
+
+	curBuf.lines = append(curBuf.lines[:curY], append(insertion, curBuf.lines[curY+1:]...)...)
+
+	curBuf.modified = true
 }
 
 func (e *editor) showError(s string, args ...interface{}) {
@@ -589,9 +682,9 @@ func (e *editor) redraw() {
 
 func (e *editor) drawLine(buf *buffer, y int, lineIdx int, width int, curLine bool) {
 	if len(buf.lines) <= lineIdx {
-		e.scr.SetCell(0, y, tcell.StyleDefault.Bold(true), '~')
+		e.scr.SetContent(0, y, '~', nil, tcell.StyleDefault.Bold(true))
 		for i := 1; i < width; i++ {
-			e.scr.SetCell(i, y, tcell.StyleDefault, ' ')
+			e.scr.SetContent(i, y, ' ', nil, tcell.StyleDefault)
 		}
 		return
 	}
@@ -603,14 +696,18 @@ func (e *editor) drawLine(buf *buffer, y int, lineIdx int, width int, curLine bo
 	e.clearLine(y, width, style)
 
 	x := 0
-	for _, r := range line {
+	for idx, r := range line {
 		if x >= width {
 			r = '$'
 		} else if r == '\t' {
 			r = ' '
 			x += tabWidth - 1
 		}
-		e.scr.SetCell(x, y, style, r)
+		charStyle := style
+		if buf.isSelectedText(lineIdx, idx) {
+			charStyle = charStyle.Background(tcell.ColorYellow).Foreground(tcell.ColorBlack)
+		}
+		e.scr.SetContent(x, y, r, nil, charStyle)
 		x += runewidth.RuneWidth(r)
 	}
 }
@@ -657,4 +754,43 @@ type buffer struct {
 	y        int
 	offset   int
 	modified bool
+
+	// fields to track selected text:
+	selecting bool
+	startX    int
+	startY    int
+	endX      int
+	endY      int
+}
+
+func sortYX(startY, startX, endY, endX int) (lowerY, lowerX, higherY, higherX int) {
+	lowerY, lowerX, higherY, higherX = startY, startX, endY, endX
+
+	if lowerY > higherY {
+		lowerY, higherY = higherY, lowerY
+		lowerX, higherX = higherX, lowerX
+	} else if lowerY == higherY && lowerX > higherX {
+		lowerX, higherX = higherX, lowerX
+	}
+
+	return
+}
+
+func (buf *buffer) isSelectedText(y, x int) bool {
+	lowerY, lowerX, higherY, higherX := sortYX(buf.startY, buf.startX, buf.endY, buf.endX)
+
+	if lowerY == higherY && lowerX == higherX {
+		return false
+	}
+
+	if y > lowerY && y < higherY {
+		return true
+	}
+	if y == lowerY && x >= lowerX && (y < higherY || (y == higherY && x < higherX)) {
+		return true
+	}
+	if y == higherY && x < higherX && (y > lowerY || (y == lowerY && x >= lowerX)) {
+		return true
+	}
+	return false
 }
