@@ -466,11 +466,23 @@ func (e *editor) cutText() {
 	curBuf := e.bufs[e.bufIdx]
 	lowerY, lowerX, higherY, higherX := sortYX(curBuf.startY, curBuf.startX, curBuf.endY, curBuf.endX)
 
+	newX := len(curBuf.lines[lowerY][:lowerX])
+
 	replacementLine := append(curBuf.lines[lowerY][:lowerX], curBuf.lines[higherY][higherX:]...)
 
 	curBuf.lines = append(curBuf.lines[:lowerY], append([][]rune{replacementLine}, curBuf.lines[higherY+1:]...)...)
 
 	curBuf.startY, curBuf.startX, curBuf.endY, curBuf.endX = 0, 0, 0, 0
+
+	for i := 0; i < higherY-lowerY; i++ {
+		if curBuf.offset > 0 {
+			curBuf.offset--
+		} else {
+			curBuf.y--
+		}
+	}
+
+	curBuf.x = newX
 
 	curBuf.modified = true
 }
@@ -482,10 +494,23 @@ func (e *editor) pasteText() {
 	curBuf := e.bufs[e.bufIdx]
 	curY := curBuf.y + curBuf.offset
 
+	lastLineX := len(insertion[len(insertion)-1])
+
 	insertion[0] = append(curBuf.lines[curY][:curBuf.x], insertion[0]...)
 	insertion[len(insertion)-1] = append(insertion[len(insertion)-1], curBuf.lines[curY][curBuf.x:]...)
 
 	curBuf.lines = append(curBuf.lines[:curY], append(insertion, curBuf.lines[curY+1:]...)...)
+
+	_, height := e.scr.Size()
+
+	for i := 0; i < len(insertion)-1; i++ {
+		if curBuf.y < height-3 {
+			curBuf.y++
+		} else {
+			curBuf.offset++
+		}
+	}
+	curBuf.x = lastLineX
 
 	curBuf.modified = true
 }
