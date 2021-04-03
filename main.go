@@ -218,11 +218,7 @@ func (e *editor) keyBackspace() {
 		curBuf.lines[lineIdx-1] = append(curBuf.lines[lineIdx-1], curBuf.lines[lineIdx]...)
 		curBuf.lines = append(curBuf.lines[:lineIdx], curBuf.lines[lineIdx+1:]...)
 
-		if curBuf.offset > 0 {
-			curBuf.offset--
-		} else {
-			curBuf.y--
-		}
+		curBuf.decrY()
 		return
 	}
 
@@ -255,13 +251,9 @@ func (e *editor) keyUp() {
 		return
 	}
 
-	if curBuf.offset > 0 {
-		curBuf.offset--
-	} else {
-		curBuf.y--
-	}
+	curBuf.decrY()
 
-	if l := len(curBuf.lines[curBuf.y+curBuf.offset]); curBuf.x > l {
+	if l := len(curBuf.curLine()); curBuf.x > l {
 		curBuf.x = l
 	}
 
@@ -277,13 +269,9 @@ func (e *editor) keyDown() {
 
 	_, height := e.scr.Size()
 
-	if curBuf.y < height-3 {
-		curBuf.y++
-	} else {
-		curBuf.offset++
-	}
+	curBuf.incrY(height)
 
-	if l := len(curBuf.lines[curBuf.y+curBuf.offset]); curBuf.x > l {
+	if l := len(curBuf.curLine()); curBuf.x > l {
 		curBuf.x = l
 	}
 
@@ -303,7 +291,7 @@ func (e *editor) keyLeft() {
 func (e *editor) keyRight() {
 	curBuf := e.bufs[e.bufIdx]
 
-	if len(curBuf.lines[curBuf.y+curBuf.offset]) > curBuf.x {
+	if len(curBuf.curLine()) > curBuf.x {
 		curBuf.x++
 	}
 
@@ -405,13 +393,13 @@ func (e *editor) prevBuffer() {
 func (e *editor) deleteToEOL() {
 	curBuf := e.bufs[e.bufIdx]
 
-	curBuf.lines[curBuf.y+curBuf.offset] = curBuf.lines[curBuf.y+curBuf.offset][:curBuf.x]
+	curBuf.lines[curBuf.curLineIdx()] = curBuf.curLine()[:curBuf.x]
 }
 
 func (e *editor) deleteFromBOL() {
 	curBuf := e.bufs[e.bufIdx]
 
-	curBuf.lines[curBuf.y+curBuf.offset] = curBuf.lines[curBuf.y+curBuf.offset][curBuf.x:]
+	curBuf.lines[curBuf.curLineIdx()] = curBuf.curLine()[curBuf.x:]
 	curBuf.x = 0
 }
 
@@ -419,7 +407,7 @@ func (e *editor) selectText() {
 	curBuf := e.bufs[e.bufIdx]
 
 	if !curBuf.selecting {
-		curBuf.startX, curBuf.startY = curBuf.x, curBuf.offset+curBuf.y
+		curBuf.startX, curBuf.startY = curBuf.x, curBuf.curLineIdx()
 		curBuf.endX, curBuf.endY = curBuf.startX, curBuf.startY
 		log.Printf("Started selecting text from %d/%d", curBuf.startY, curBuf.startX)
 	} else {
@@ -480,11 +468,7 @@ func (e *editor) cutText() {
 	curBuf.startY, curBuf.startX, curBuf.endY, curBuf.endX = 0, 0, 0, 0
 
 	for i := 0; i < higherY-lowerY; i++ {
-		if curBuf.offset > 0 {
-			curBuf.offset--
-		} else {
-			curBuf.y--
-		}
+		curBuf.decrY()
 	}
 
 	curBuf.x = newX
@@ -519,11 +503,7 @@ func (e *editor) pasteText() {
 	_, height := e.scr.Size()
 
 	for i := 0; i < len(insertion)-1; i++ {
-		if curBuf.y < height-3 {
-			curBuf.y++
-		} else {
-			curBuf.offset++
-		}
+		curBuf.incrY(height)
 	}
 	curBuf.x = lastLineX
 
@@ -536,17 +516,13 @@ func (e *editor) pageDown() {
 	curBuf := e.bufs[e.bufIdx]
 
 	for i := 0; i < height-2; i++ {
-		if curBuf.y+curBuf.offset == len(curBuf.lines)-1 {
+		if curBuf.curLineIdx() == len(curBuf.lines)-1 {
 			break
 		}
-		if curBuf.y < height-3 {
-			curBuf.y++
-		} else {
-			curBuf.offset++
-		}
+		curBuf.incrY(height)
 	}
 
-	if l := len(curBuf.lines[curBuf.y+curBuf.offset]); l < curBuf.x {
+	if l := len(curBuf.curLine()); l < curBuf.x {
 		curBuf.x = l
 	}
 }
@@ -557,17 +533,13 @@ func (e *editor) pageUp() {
 	curBuf := e.bufs[e.bufIdx]
 
 	for i := 0; i < height-2; i++ {
-		if curBuf.y+curBuf.offset == 0 {
+		if curBuf.curLineIdx() == 0 {
 			break
 		}
-		if curBuf.offset > 0 {
-			curBuf.offset--
-		} else {
-			curBuf.y--
-		}
+		curBuf.decrY()
 	}
 
-	if l := len(curBuf.lines[curBuf.y+curBuf.offset]); l < curBuf.x {
+	if l := len(curBuf.curLine()); l < curBuf.x {
 		curBuf.x = l
 	}
 }
@@ -729,10 +701,10 @@ func (e *editor) redrawScreen() {
 	curBuf := e.bufs[e.bufIdx]
 
 	for i := curBuf.offset; i < curBuf.offset+height-2; i++ {
-		e.drawLine(curBuf, i-curBuf.offset, i, width, i == curBuf.offset+curBuf.y)
+		e.drawLine(curBuf, i-curBuf.offset, i, width, i == curBuf.curLineIdx())
 	}
 
-	x := strwidth(curBuf.lines[curBuf.y+curBuf.offset][:curBuf.x])
+	x := strwidth(curBuf.curLine()[:curBuf.x])
 
 	e.scr.ShowCursor(x, curBuf.y)
 
@@ -786,7 +758,7 @@ func (e *editor) drawLine(buf *buffer, y int, lineIdx int, width int, curLine bo
 			x += tabWidth - 1
 		}
 		charStyle := style
-		if buf.isSelectedText(lineIdx, idx) {
+		if buf.isWithinSelectedText(lineIdx, idx) {
 			charStyle = charStyle.Background(tcell.ColorYellow).Foreground(tcell.ColorBlack)
 		}
 		e.scr.SetContent(x, y, r, nil, charStyle)
@@ -816,7 +788,7 @@ func (e *editor) drawStatus(y int, width int) {
 		status += curBuf.fname + " "
 	}
 
-	status += fmt.Sprintf("(%d of %d) [%d|%d-%d]", e.bufIdx+1, len(e.bufs), curBuf.y+curBuf.offset, curBuf.x, strwidth(curBuf.lines[curBuf.y+curBuf.offset][:curBuf.x]))
+	status += fmt.Sprintf("(%d of %d) [%d|%d-%d]", e.bufIdx+1, len(e.bufs), curBuf.curLineIdx(), curBuf.x, strwidth(curBuf.curLine()[:curBuf.x]))
 
 	statusStyle := tcell.StyleDefault.Reverse(true)
 
@@ -858,7 +830,7 @@ func sortYX(startY, startX, endY, endX int) (lowerY, lowerX, higherY, higherX in
 	return
 }
 
-func (buf *buffer) isSelectedText(y, x int) bool {
+func (buf *buffer) isWithinSelectedText(y, x int) bool {
 	lowerY, lowerX, higherY, higherX := sortYX(buf.startY, buf.startX, buf.endY, buf.endX)
 
 	if lowerY == higherY && lowerX == higherX {
@@ -875,4 +847,28 @@ func (buf *buffer) isSelectedText(y, x int) bool {
 		return true
 	}
 	return false
+}
+
+func (buf *buffer) incrY(height int) {
+	if buf.y < height-3 {
+		buf.y++
+	} else {
+		buf.offset++
+	}
+}
+
+func (buf *buffer) decrY() {
+	if buf.offset > 0 {
+		buf.offset--
+	} else {
+		buf.y--
+	}
+}
+
+func (buf *buffer) curLineIdx() int {
+	return buf.y + buf.offset
+}
+
+func (buf *buffer) curLine() []rune {
+	return buf.lines[buf.curLineIdx()]
 }
