@@ -1,4 +1,6 @@
 TODO list:
 - ensure that all changes to X/Y+offset are reflected in selection change.
 - test copy/cut/paste more.
-- on paste, move cursor to position past last inserted character.
+- multiple undo and redo.
+- rectangular block selection feature.
+- RE find/replace.

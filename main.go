@@ -67,11 +67,13 @@ func main() {
 		{tcell.KeyCtrlL, ed.redraw, "redraw screen"},
 		{tcell.KeyCtrlN, ed.nextBuffer, "go to next file"},
 		{tcell.KeyCtrlP, ed.prevBuffer, "go to previous file"},
+		{tcell.KeyCtrlR, ed.redo, "redo previously undone change"},
 		{tcell.KeyCtrlS, ed.save, "save file"},
 		{tcell.KeyCtrlU, ed.deleteFromBOL, "delete text from beginning of line"},
 		{tcell.KeyCtrlV, ed.pasteText, "paste text from clipboard"},
 		{tcell.KeyCtrlW, ed.saveAs, "save file as"},
 		{tcell.KeyCtrlX, ed.cutText, "cut selected text to clipboard"},
+		{tcell.KeyCtrlZ, ed.undo, "undo last change"},
 		{tcell.KeyCR, ed.newLine, "insert new line"},
 		{tcell.KeyUp, ed.keyUp, "go to previous line"},
 		{tcell.KeyDown, ed.keyDown, "go to next line"},
@@ -139,7 +141,10 @@ func (e *editor) loadBufferFromFile(fn string) error {
 
 	scanner := bufio.NewScanner(f)
 
-	buf := &buffer{fname: fn}
+	buf := &buffer{
+		fname:      fn,
+		historyIdx: -1,
+	}
 
 	for scanner.Scan() {
 		buf.lines = append(buf.lines, []rune(scanner.Text()))
@@ -156,7 +161,8 @@ func (e *editor) loadBufferFromFile(fn string) error {
 
 func (e *editor) addNewBuffer() {
 	e.bufs = append(e.bufs, &buffer{
-		lines: [][]rune{{}},
+		lines:      [][]rune{{}},
+		historyIdx: -1,
 	})
 }
 
@@ -171,14 +177,19 @@ func (e *editor) handleInput(r rune) {
 		curLine = append(curLine[:curBuf.x], append([]rune{r}, curLine[curBuf.x:]...)...)
 	}
 	curBuf.lines[lineIdx] = curLine
+
+	curBuf.historyAddRune(r)
+
 	curBuf.x++
 
 	curBuf.modified = true
 }
 
 func (e *editor) gotoBOL() {
-	e.bufs[e.bufIdx].x = 0
-	e.updateSelectedTextPos(e.bufs[e.bufIdx])
+	curBuf := e.bufs[e.bufIdx]
+	curBuf.x = 0
+	e.updateSelectedTextPos(curBuf)
+	curBuf.historyFinishOp()
 }
 
 func (e *editor) gotoEOL() {
@@ -189,6 +200,8 @@ func (e *editor) gotoEOL() {
 	curBuf.x = len(curLine)
 
 	e.updateSelectedTextPos(curBuf)
+
+	curBuf.historyFinishOp()
 }
 
 func (e *editor) newLine() {
@@ -200,8 +213,13 @@ func (e *editor) newLine() {
 	curBuf.lines[lineIdx] = curLine
 	curBuf.lines = append(curBuf.lines[:lineIdx+1], append([][]rune{nextLine}, curBuf.lines[lineIdx+1:]...)...)
 
-	e.keyDown()
-	curBuf.x = 0
+	_, height := e.scr.Size()
+
+	curBuf.incrY(height)
+
+	curBuf.correctX()
+
+	curBuf.historyAddLine()
 }
 
 func (e *editor) keyBackspace() {
@@ -219,11 +237,16 @@ func (e *editor) keyBackspace() {
 		curBuf.lines = append(curBuf.lines[:lineIdx], curBuf.lines[lineIdx+1:]...)
 
 		curBuf.decrY()
+
+		curBuf.historyRemoveLine()
 		return
 	}
 
+	r := curBuf.lines[lineIdx][curBuf.x-1]
+
 	curBuf.lines[lineIdx] = append(curBuf.lines[lineIdx][:curBuf.x-1], curBuf.lines[lineIdx][curBuf.x:]...)
 	curBuf.x--
+	curBuf.historyRemoveChar(r)
 }
 
 func (e *editor) keyDel() {
@@ -238,10 +261,14 @@ func (e *editor) keyDel() {
 
 		curBuf.lines[lineIdx] = append(curBuf.lines[lineIdx], curBuf.lines[lineIdx+1]...)
 		curBuf.lines = append(curBuf.lines[:lineIdx+1], curBuf.lines[lineIdx+2:]...)
+		curBuf.historyRemoveLine()
 		return
 	}
 
+	r := curBuf.lines[lineIdx][curBuf.x]
+
 	curBuf.lines[lineIdx] = append(curBuf.lines[lineIdx][:curBuf.x], curBuf.lines[lineIdx][curBuf.x+1:]...)
+	curBuf.historyRemoveChar(r)
 }
 
 func (e *editor) keyUp() {
@@ -253,11 +280,11 @@ func (e *editor) keyUp() {
 
 	curBuf.decrY()
 
-	if l := len(curBuf.curLine()); curBuf.x > l {
-		curBuf.x = l
-	}
+	curBuf.correctX()
 
 	e.updateSelectedTextPos(curBuf)
+
+	curBuf.historyFinishOp()
 }
 
 func (e *editor) keyDown() {
@@ -271,11 +298,11 @@ func (e *editor) keyDown() {
 
 	curBuf.incrY(height)
 
-	if l := len(curBuf.curLine()); curBuf.x > l {
-		curBuf.x = l
-	}
+	curBuf.correctX()
 
 	e.updateSelectedTextPos(curBuf)
+
+	curBuf.historyFinishOp()
 }
 
 func (e *editor) keyLeft() {
@@ -286,6 +313,8 @@ func (e *editor) keyLeft() {
 	}
 
 	e.updateSelectedTextPos(curBuf)
+
+	curBuf.historyFinishOp()
 }
 
 func (e *editor) keyRight() {
@@ -296,6 +325,8 @@ func (e *editor) keyRight() {
 	}
 
 	e.updateSelectedTextPos(curBuf)
+
+	curBuf.historyFinishOp()
 }
 
 func (e *editor) quit() {
@@ -428,7 +459,7 @@ func (e *editor) copyText() {
 	curBuf := e.bufs[e.bufIdx]
 	curBuf.selecting = false
 
-	lowerY, lowerX, higherY, higherX := sortYX(curBuf.startY, curBuf.startX, curBuf.endY, curBuf.endX)
+	lowerY, lowerX, higherY, higherX := curBuf.getSelection()
 
 	copiedData := [][]rune{}
 
@@ -457,7 +488,7 @@ func (e *editor) cutText() {
 	e.copyText()
 
 	curBuf := e.bufs[e.bufIdx]
-	lowerY, lowerX, higherY, higherX := sortYX(curBuf.startY, curBuf.startX, curBuf.endY, curBuf.endX)
+	lowerY, lowerX, higherY, higherX := curBuf.getSelection()
 
 	newX := len(curBuf.lines[lowerY][:lowerX])
 
@@ -522,9 +553,7 @@ func (e *editor) pageDown() {
 		curBuf.incrY(height)
 	}
 
-	if l := len(curBuf.curLine()); l < curBuf.x {
-		curBuf.x = l
-	}
+	curBuf.correctX()
 }
 
 func (e *editor) pageUp() {
@@ -539,9 +568,51 @@ func (e *editor) pageUp() {
 		curBuf.decrY()
 	}
 
-	if l := len(curBuf.curLine()); l < curBuf.x {
-		curBuf.x = l
+	curBuf.correctX()
+}
+
+func (e *editor) undo() {
+	curBuf := e.bufs[e.bufIdx]
+
+	if curBuf.historyIdx < 0 {
+		e.showError("Already at oldest change")
+		return
 	}
+
+	op := curBuf.editHistory[curBuf.historyIdx]
+	op.finished = true
+
+	log.Printf("undo: op = %d y = %d x = %d", op.op, op.y, op.x)
+	for idx, line := range op.text {
+		log.Printf("undo: line %d: %s", idx, string(line))
+	}
+
+	op.undo(curBuf)
+	curBuf.historyIdx--
+
+	curBuf.correctY()
+	curBuf.correctX()
+}
+
+func (e *editor) redo() {
+	curBuf := e.bufs[e.bufIdx]
+
+	if curBuf.historyIdx == len(curBuf.editHistory)-1 {
+		e.showError("Already at newest change")
+		return
+	}
+
+	curBuf.historyIdx++
+
+	op := curBuf.editHistory[curBuf.historyIdx]
+	log.Printf("redo: op = %d y = %d x = %d finished = %t", op.op, op.y, op.x, op.finished)
+	for idx, line := range op.text {
+		log.Printf("redo: line %d: %s", idx, string(line))
+	}
+
+	op.redo(curBuf)
+
+	curBuf.correctX()
 }
 
 func (e *editor) showError(s string, args ...interface{}) {
@@ -799,76 +870,4 @@ func (e *editor) drawStatus(y int, width int) {
 		e.scr.SetContent(x, y, r, nil, statusStyle)
 		x += runewidth.RuneWidth(r)
 	}
-}
-
-type buffer struct {
-	fname    string
-	lines    [][]rune
-	x        int
-	y        int
-	offset   int
-	modified bool
-
-	// fields to track selected text:
-	selecting bool
-	startX    int
-	startY    int
-	endX      int
-	endY      int
-}
-
-func sortYX(startY, startX, endY, endX int) (lowerY, lowerX, higherY, higherX int) {
-	lowerY, lowerX, higherY, higherX = startY, startX, endY, endX
-
-	if lowerY > higherY {
-		lowerY, higherY = higherY, lowerY
-		lowerX, higherX = higherX, lowerX
-	} else if lowerY == higherY && lowerX > higherX {
-		lowerX, higherX = higherX, lowerX
-	}
-
-	return
-}
-
-func (buf *buffer) isWithinSelectedText(y, x int) bool {
-	lowerY, lowerX, higherY, higherX := sortYX(buf.startY, buf.startX, buf.endY, buf.endX)
-
-	if lowerY == higherY && lowerX == higherX {
-		return false
-	}
-
-	if y > lowerY && y < higherY {
-		return true
-	}
-	if y == lowerY && x >= lowerX && (y < higherY || (y == higherY && x < higherX)) {
-		return true
-	}
-	if y == higherY && x < higherX && (y > lowerY || (y == lowerY && x >= lowerX)) {
-		return true
-	}
-	return false
-}
-
-func (buf *buffer) incrY(height int) {
-	if buf.y < height-3 {
-		buf.y++
-	} else {
-		buf.offset++
-	}
-}
-
-func (buf *buffer) decrY() {
-	if buf.offset > 0 {
-		buf.offset--
-	} else {
-		buf.y--
-	}
-}
-
-func (buf *buffer) curLineIdx() int {
-	return buf.y + buf.offset
-}
-
-func (buf *buffer) curLine() []rune {
-	return buf.lines[buf.curLineIdx()]
 }
