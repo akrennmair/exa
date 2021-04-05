@@ -3,3 +3,5 @@ TODO list:
 - test copy/cut/paste more.
 - rectangular block selection feature.
 - RE find/replace.
+- make key mapping configurable
+- add functions to create new buffer, open file in new buffer, close existing buffer
