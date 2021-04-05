@@ -58,6 +58,8 @@ func main() {
 
 	ed.scr = scr
 
+	scr.EnableMouse(tcell.MouseMotionEvents)
+
 	ops := []keyMapping{
 		{tcell.KeyCtrlSpace, ed.selectText, "start/stop selecting text"},
 		{tcell.KeyCtrlA, ed.gotoBOL, "go to beginning of line"},
@@ -114,6 +116,9 @@ func main() {
 			if e.Key() == tcell.KeyRune || e.Key() == tcell.KeyTAB {
 				ed.handleInput(e.Rune())
 			}
+		case *tcell.EventMouse:
+			x, y := e.Position()
+			log.Printf("mouse event: buttons = %b modifiers = %b y/x = %d/%d", e.Buttons(), e.Modifiers(), y, x)
 		}
 	}
 }
