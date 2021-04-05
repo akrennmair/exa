@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
@@ -65,6 +66,7 @@ func main() {
 		{tcell.KeyCtrlA, ed.gotoBOL, "go to beginning of line"},
 		{tcell.KeyCtrlC, ed.copyText, "copy selected text to clipboard"},
 		{tcell.KeyCtrlE, ed.gotoEOL, "go to end of line"},
+		{tcell.KeyCtrlH, ed.showHelp, "show help"},
 		{tcell.KeyCtrlK, ed.deleteToEOL, "delete text to end of line"},
 		{tcell.KeyCtrlL, ed.redraw, "redraw screen"},
 		{tcell.KeyCtrlN, ed.nextBuffer, "go to next file"},
@@ -87,6 +89,8 @@ func main() {
 		{tcell.KeyDelete, ed.keyDel, "delete character right from cursor"},
 		{tcell.KeyCtrlQ, ed.quit, "quit"},
 	}
+
+	ed.ops = ops
 
 	for {
 		ed.redrawScreen()
@@ -135,6 +139,7 @@ type editor struct {
 	bufIdx        int
 	quitInputLoop bool
 	clipboard     [][]rune
+	ops           []keyMapping
 }
 
 func (e *editor) loadBufferFromFile(fn string) error {
@@ -620,6 +625,52 @@ func (e *editor) redo() {
 	curBuf.correctX()
 }
 
+func (e *editor) showHelp() {
+	e.scr.Clear()
+
+	width, _ := e.scr.Size()
+
+	e.clearLine(0, width, tcell.StyleDefault.Reverse(true))
+
+	titleText := "Help - Press Any Key To Continue"
+
+	x := 0
+	for _, r := range titleText {
+		e.scr.SetContent(x, 0, r, nil, tcell.StyleDefault.Reverse(true))
+		x += runewidth.RuneWidth(r)
+	}
+
+	var helpElems []string
+
+	keyWidth := 16
+	for _, op := range e.ops {
+		helpElem := tcell.KeyNames[op.Key] + " "
+		helpElem += strings.Repeat(".", keyWidth-len(helpElem)) + " " + op.Desc
+		helpElems = append(helpElems, helpElem)
+	}
+
+	widths := []int{0, width / 2}
+
+	for i := 0; i < len(helpElems); i++ {
+		x := widths[i%len(widths)]
+		y := 1 + i/2
+		for _, r := range helpElems[i] {
+			e.scr.SetContent(x, y, r, nil, tcell.StyleDefault)
+			x += runewidth.RuneWidth(r)
+		}
+	}
+
+	e.scr.Show()
+
+	for {
+		evt := e.scr.PollEvent()
+		// wait for next key event, discard it.
+		if _, ok := evt.(*tcell.EventKey); ok {
+			return
+		}
+	}
+}
+
 func (e *editor) showError(s string, args ...interface{}) {
 	str := fmt.Sprintf(s, args...)
 
@@ -868,7 +919,7 @@ func (e *editor) drawStatus(y int, width int) {
 		status += curBuf.fname + " "
 	}
 
-	status += fmt.Sprintf("(%d of %d) [%d|%d-%d]", e.bufIdx+1, len(e.bufs), curBuf.curLineIdx(), curBuf.x, strwidth(curBuf.curLine()[:curBuf.x]))
+	status += fmt.Sprintf("(%d of %d) [%d|%d-%d] - Press Ctrl-H for Help", e.bufIdx+1, len(e.bufs), curBuf.curLineIdx(), curBuf.x, strwidth(curBuf.curLine()[:curBuf.x]))
 
 	statusStyle := tcell.StyleDefault.Reverse(true)
 
