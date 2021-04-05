@@ -622,7 +622,11 @@ func (e *editor) showError(s string, args ...interface{}) {
 
 	e.clearLine(height-1, width, tcell.StyleDefault)
 
-	e.scr.SetCell(0, height-1, tcell.StyleDefault, []rune(str)...)
+	x := 0
+	for _, r := range str {
+		e.scr.SetContent(x, height-1, r, nil, tcell.StyleDefault)
+		x += runewidth.RuneWidth(r)
+	}
 }
 
 func (e *editor) readString(prompt string) (input string, ok bool) {
@@ -839,7 +843,7 @@ func (e *editor) drawLine(buf *buffer, y int, lineIdx int, width int, curLine bo
 
 func (e *editor) clearLine(y int, width int, style tcell.Style) {
 	for x := 0; x < width; x++ {
-		e.scr.SetCell(x, y, style, ' ')
+		e.scr.SetContent(x, y, ' ', nil, style)
 	}
 }
 

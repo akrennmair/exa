@@ -187,59 +187,50 @@ func (op *editOp) undo(buf *buffer) {
 	}
 	switch op.op {
 	case opInsertText:
-		if len(op.text) == 1 {
-			buf.lines[op.y] = append(buf.lines[op.y][:op.x], buf.lines[op.y][op.x+len(op.text[0]):]...)
-		} else {
-			buf.lines[op.y] = buf.lines[op.y][:op.x]
-			buf.lines = append(buf.lines[:op.y+1], buf.lines[op.y+len(op.text)-1:]...)
-			lastLine := buf.lines[op.y+1][len(op.text[len(op.text)-1]):]
-			if len(lastLine) > 0 {
-				buf.lines[op.y+1] = lastLine
-			} else {
-				buf.lines = append(buf.lines[:op.y+1], buf.lines[op.y+2:]...)
-			}
-			for idx, line := range buf.lines {
-				log.Printf("editOp.undo: after buf line %d: %s", idx, string(line))
-			}
+		op.removeText(buf)
+		for idx, line := range buf.lines {
+			log.Printf("editOp.undo: after buf line %d: %s", idx, string(line))
 		}
 	case opRemoveText:
-		if len(op.text) == 1 {
-			buf.lines[op.y] = append(buf.lines[op.y][:op.x], append(op.text[0], buf.lines[op.y][op.x:]...)...)
-		} else {
-			insertion := [][]rune{}
-			insertion = append(insertion, op.text...)
-
-			beforeInsertion, afterInsertion := buf.lines[op.y][:buf.x], buf.lines[op.y][buf.x:]
-			insertion[0] = append(append([]rune{}, beforeInsertion...), insertion[0]...)
-			insertion[len(insertion)-1] = append(insertion[len(insertion)-1], afterInsertion...)
-
-			buf.lines = append(buf.lines[:op.y], append(insertion, buf.lines[op.y+1:]...)...)
-		}
+		op.insertText(buf)
 	}
 }
 
 func (op *editOp) redo(buf *buffer) {
 	switch op.op {
 	case opInsertText:
-		if len(op.text) == 1 {
-			buf.lines[op.y] = append(buf.lines[op.y][:op.x], append(op.text[0], buf.lines[op.y][op.x:]...)...)
-		} else {
-			insertion := [][]rune{}
-			insertion = append(insertion, op.text...)
-
-			beforeInsertion, afterInsertion := buf.lines[op.y][:buf.x], buf.lines[op.y][buf.x:]
-			insertion[0] = append(append([]rune{}, beforeInsertion...), insertion[0]...)
-			insertion[len(insertion)-1] = append(insertion[len(insertion)-1], afterInsertion...)
-
-			buf.lines = append(buf.lines[:op.y], append(insertion, buf.lines[op.y+1:]...)...)
-		}
+		op.insertText(buf)
 	case opRemoveText:
-		if len(op.text) == 1 {
-			buf.lines[op.y] = append(buf.lines[op.y][:op.x], buf.lines[op.y][op.x+len(op.text[0]):]...)
+		op.removeText(buf)
+	}
+}
+
+func (op *editOp) removeText(buf *buffer) {
+	if len(op.text) == 1 {
+		buf.lines[op.y] = append(buf.lines[op.y][:op.x], buf.lines[op.y][op.x+len(op.text[0]):]...)
+	} else {
+		buf.lines[op.y] = buf.lines[op.y][:op.x]
+		buf.lines = append(buf.lines[:op.y+1], buf.lines[op.y+len(op.text)-1:]...)
+		lastLine := buf.lines[op.y+1][len(op.text[len(op.text)-1]):]
+		if len(lastLine) > 0 {
+			buf.lines[op.y+1] = lastLine
 		} else {
-			buf.lines[op.y] = buf.lines[op.y][:op.x]
-			buf.lines = append(buf.lines[:op.y+1], buf.lines[op.y+len(op.text):]...)
-			buf.lines[op.y+1] = buf.lines[op.y+1][:len(op.text[len(op.text)-1])]
+			buf.lines = append(buf.lines[:op.y+1], buf.lines[op.y+2:]...)
 		}
+	}
+}
+
+func (op *editOp) insertText(buf *buffer) {
+	if len(op.text) == 1 {
+		buf.lines[op.y] = append(buf.lines[op.y][:op.x], append(op.text[0], buf.lines[op.y][op.x:]...)...)
+	} else {
+		insertion := [][]rune{}
+		insertion = append(insertion, op.text...)
+
+		beforeInsertion, afterInsertion := buf.lines[op.y][:buf.x], buf.lines[op.y][buf.x:]
+		insertion[0] = append(append([]rune{}, beforeInsertion...), insertion[0]...)
+		insertion[len(insertion)-1] = append(insertion[len(insertion)-1], afterInsertion...)
+
+		buf.lines = append(buf.lines[:op.y], append(insertion, buf.lines[op.y+1:]...)...)
 	}
 }
