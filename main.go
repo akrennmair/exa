@@ -64,13 +64,17 @@ func main() {
 	ops := []keyMapping{
 		{tcell.KeyCtrlSpace, ed.selectText, "start/stop selecting text"},
 		{tcell.KeyCtrlA, ed.gotoBOL, "go to beginning of line"},
+		{tcell.KeyCtrlB, ed.newBuffer, "create new buffer"},
 		{tcell.KeyCtrlC, ed.copyText, "copy selected text to clipboard"},
+		{tcell.KeyCtrlD, ed.closeBuffer, "close current buffer"},
 		{tcell.KeyCtrlE, ed.gotoEOL, "go to end of line"},
 		{tcell.KeyCtrlH, ed.showHelp, "show help"},
 		{tcell.KeyCtrlK, ed.deleteToEOL, "delete text to end of line"},
 		{tcell.KeyCtrlL, ed.redraw, "redraw screen"},
 		{tcell.KeyCtrlN, ed.nextBuffer, "go to next file"},
+		{tcell.KeyCtrlO, ed.openFile, "open file in new buffer"},
 		{tcell.KeyCtrlP, ed.prevBuffer, "go to previous file"},
+		{tcell.KeyCtrlQ, ed.quit, "quit"},
 		{tcell.KeyCtrlR, ed.redo, "redo previously undone change"},
 		{tcell.KeyCtrlS, ed.save, "save file"},
 		{tcell.KeyCtrlU, ed.deleteFromBOL, "delete text from beginning of line"},
@@ -87,7 +91,6 @@ func main() {
 		{tcell.KeyPgUp, ed.pageUp, "go to previous page"},
 		{tcell.KeyDEL, ed.keyBackspace, "delete character left from cursor"},
 		{tcell.KeyDelete, ed.keyDel, "delete character right from cursor"},
-		{tcell.KeyCtrlQ, ed.quit, "quit"},
 	}
 
 	ed.ops = ops
@@ -668,6 +671,49 @@ func (e *editor) showHelp() {
 		if _, ok := evt.(*tcell.EventKey); ok {
 			return
 		}
+	}
+}
+
+func (e *editor) openFile() {
+	file, ok := e.readString("Filename")
+	if !ok {
+		return
+	}
+
+	if err := e.loadBufferFromFile(file); err != nil {
+		e.showError("Couldn't open file: %v", err)
+		return
+	}
+
+	e.bufIdx = len(e.bufs) - 1
+}
+
+func (e *editor) newBuffer() {
+	e.addNewBuffer()
+	e.bufIdx = len(e.bufs) - 1
+}
+
+func (e *editor) closeBuffer() {
+	if len(e.bufs) == 1 {
+		e.showError("Can't close last remaining buffer")
+		return
+	}
+
+	curBuf := e.bufs[e.bufIdx]
+	if curBuf.modified {
+		switch e.query("Save file?", "ync") {
+		case 'y':
+			e.save()
+		case 'n':
+			// nothing to do
+		case 'c':
+			return // cancel closing
+		}
+	}
+
+	e.bufs = append(e.bufs[:e.bufIdx], e.bufs[e.bufIdx+1:]...)
+	if e.bufIdx >= len(e.bufs) {
+		e.bufIdx = len(e.bufs) - 1
 	}
 }
 
