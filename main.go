@@ -7,7 +7,9 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
@@ -378,19 +380,28 @@ func (e *editor) save() {
 }
 
 func (e *editor) saveFile(curBuf *buffer) {
-	f, err := os.OpenFile(curBuf.fname, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	tmpName := filepath.Join(filepath.Dir(curBuf.fname), fmt.Sprintf(".tmp%x", time.Now().UnixNano()))
+	f, err := os.OpenFile(tmpName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		e.showError("Failed to write file: %v", err)
+		e.showError("Failed to open temporary file: %v", err)
 		return
 	}
 	defer f.Close()
 
 	w := bufio.NewWriter(f)
 	for _, line := range curBuf.lines {
-		w.WriteString(string(line) + "\n") // TODO: handle error better, maybe write to temporary file, then move?
+		if _, err := w.WriteString(string(line) + "\n"); err != nil {
+			e.showError("Failed to write to temporary file: %v", err)
+			return
+		}
 	}
 	if err := w.Flush(); err != nil {
 		e.showError("Failed to write file content: %v", err)
+		return
+	}
+
+	if err := os.Rename(tmpName, curBuf.fname); err != nil {
+		e.showError("Failed to replace %s with temporary file %s: %v", curBuf.fname, tmpName, err)
 		return
 	}
 
