@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -148,6 +149,14 @@ type editor struct {
 }
 
 func (e *editor) loadBufferFromFile(fn string) error {
+	if _, err := os.Stat(fn); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			e.addNewBuffer()
+			e.bufs[len(e.bufs)-1].fname = fn
+			return nil
+		}
+	}
+
 	f, err := os.Open(fn)
 	if err != nil {
 		return err
