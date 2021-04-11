@@ -1,6 +1,8 @@
 package main
 
-import "log"
+import (
+	"log"
+)
 
 type buffer struct {
 	fname    string
@@ -20,6 +22,9 @@ type buffer struct {
 	// stuff to track edit history for undo/redo:
 	editHistory []*editOp
 	historyIdx  int
+
+	findLastLine int
+	findPhrase   []rune
 }
 
 func (buf *buffer) getSelection() (lowerY, lowerX, higherY, higherX int) {
@@ -160,6 +165,62 @@ func (buf *buffer) historyRemoveChar(r rune) {
 	op.text[0] = append([]rune{r}, op.text[0]...)
 	op.y = buf.curLineIdx()
 	op.x = buf.x
+}
+
+func (buf *buffer) find(phrase []rune) (y, x int, found bool) {
+	if !runeEqual(buf.findPhrase, phrase) {
+		buf.findLastLine = buf.curLineIdx()
+		if buf.findLastLine == 0 {
+			buf.findLastLine = len(buf.lines) - 1
+		} else {
+			buf.findLastLine--
+		}
+	}
+
+	for y := buf.findLastLine + 1; y < len(buf.lines); y++ {
+		if x := runeIndex(buf.lines[y], phrase); x >= 0 {
+			buf.findLastLine = y
+			return y, x, true
+		}
+	}
+	for idx := 0; idx <= buf.findLastLine; idx++ {
+		if x := runeIndex(buf.lines[y], phrase); x >= 0 {
+			buf.findLastLine = y
+			return y, x, true
+		}
+	}
+
+	return 0, 0, false
+}
+
+func runeEqual(a, b []rune) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for idx := range a {
+		if a[idx] != b[idx] {
+			return false
+		}
+	}
+
+	return true
+}
+
+func runeIndex(haystack, needle []rune) (idx int) {
+	for i := 0; i <= len(haystack)-len(needle); i++ {
+		mismatch := false
+		for j := 0; j < len(needle); j++ {
+			if haystack[i+j] != needle[j] {
+				mismatch = true
+				break
+			}
+		}
+		if !mismatch {
+			return i
+		}
+	}
+	return -1
 }
 
 type editOp struct {

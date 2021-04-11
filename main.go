@@ -71,6 +71,7 @@ func main() {
 		{tcell.KeyCtrlC, ed.copyText, "copy selected text to clipboard"},
 		{tcell.KeyCtrlD, ed.closeBuffer, "close current buffer"},
 		{tcell.KeyCtrlE, ed.gotoEOL, "go to end of line"},
+		{tcell.KeyCtrlF, ed.find, "find text"},
 		{tcell.KeyCtrlH, ed.showHelp, "show help"},
 		{tcell.KeyCtrlK, ed.deleteToEOL, "delete text to end of line"},
 		{tcell.KeyCtrlL, ed.redraw, "redraw screen"},
@@ -377,7 +378,7 @@ func (e *editor) save() {
 	curBuf := e.bufs[e.bufIdx]
 
 	if curBuf.fname == "" {
-		fname, ok := e.readString("Filename")
+		fname, ok := e.readString("Filename", nil)
 		if !ok {
 			return
 		}
@@ -420,7 +421,7 @@ func (e *editor) saveFile(curBuf *buffer) {
 func (e *editor) saveAs() {
 	curBuf := e.bufs[e.bufIdx]
 
-	fname, ok := e.readString("New filename")
+	fname, ok := e.readString("New filename", nil)
 	if !ok {
 		return
 	}
@@ -695,7 +696,7 @@ func (e *editor) showHelp() {
 }
 
 func (e *editor) openFile() {
-	file, ok := e.readString("Filename")
+	file, ok := e.readString("Filename", nil)
 	if !ok {
 		return
 	}
@@ -737,6 +738,33 @@ func (e *editor) closeBuffer() {
 	}
 }
 
+func (e *editor) find() {
+	curBuf := e.bufs[e.bufIdx]
+
+	_, height := e.scr.Size()
+
+	findPhrase, ok := e.readString("Find", curBuf.findPhrase)
+	if !ok {
+		return
+	}
+
+	curBuf.findPhrase = []rune(findPhrase)
+
+	y, x, found := curBuf.find([]rune(findPhrase))
+	if !found {
+		e.showError("Text not found")
+		return
+	}
+
+	curBuf.x = x
+	for y > curBuf.curLineIdx() {
+		curBuf.incrY(height)
+	}
+	for y < curBuf.curLineIdx() {
+		curBuf.decrY()
+	}
+}
+
 func (e *editor) showError(s string, args ...interface{}) {
 	str := fmt.Sprintf(s, args...)
 
@@ -751,11 +779,8 @@ func (e *editor) showError(s string, args ...interface{}) {
 	}
 }
 
-func (e *editor) readString(prompt string) (input string, ok bool) {
-	var (
-		inputRunes []rune
-		cursorPos  = 0
-	)
+func (e *editor) readString(prompt string, inputRunes []rune) (input string, ok bool) {
+	cursorPos := len(inputRunes)
 
 	defer func() {
 		width, height := e.scr.Size()
