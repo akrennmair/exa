@@ -359,7 +359,7 @@ func (e *editor) redrawScreen() {
 		e.drawLine(curBuf, i-curBuf.offset, i, width, i == curBuf.curLineIdx())
 	}
 
-	x := strwidth(curBuf.curLine()[:curBuf.x])
+	x := runeWidth(curBuf.curLine()[:curBuf.x])
 
 	e.scr.ShowCursor(x, curBuf.y)
 
@@ -428,7 +428,7 @@ func (e *editor) drawStatus(y int, width int) {
 		status += curBuf.fname + " "
 	}
 
-	status += fmt.Sprintf("(%d of %d) [%d|%d-%d] - Press Ctrl-H for Help", e.bufIdx+1, len(e.bufs), curBuf.curLineIdx(), curBuf.x, strwidth(curBuf.curLine()[:curBuf.x]))
+	status += fmt.Sprintf("(%d of %d) [%d|%d-%d] - Press Ctrl-H for Help", e.bufIdx+1, len(e.bufs), curBuf.curLineIdx(), curBuf.x, runeWidth(curBuf.curLine()[:curBuf.x]))
 
 	statusStyle := tcell.StyleDefault.Reverse(true)
 

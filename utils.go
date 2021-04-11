@@ -2,7 +2,7 @@ package main
 
 import "github.com/mattn/go-runewidth"
 
-func strwidth(s []rune) (w int) {
+func runeWidth(s []rune) (w int) {
 	for _, r := range s {
 		if r == '\t' {
 			w += tabWidth

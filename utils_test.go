@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRuneIndex(t *testing.T) {
@@ -52,7 +52,46 @@ func TestRuneIndex(t *testing.T) {
 	for testName, tt := range testData {
 		t.Run(testName, func(t *testing.T) {
 			idx := runeIndex(tt.Haystack, tt.Needle)
-			assert.Equal(t, tt.ExpectedIndex, idx, "haystack %q, needle %q", string(tt.Haystack), string(tt.Needle))
+			require.Equal(t, tt.ExpectedIndex, idx, "haystack %q, needle %q", string(tt.Haystack), string(tt.Needle))
+		})
+	}
+}
+
+func TestRuneEqual(t *testing.T) {
+	testData := map[string]struct {
+		A           []rune
+		B           []rune
+		ExpectEqual bool
+	}{
+		"equal":              {[]rune("hello"), []rune("hello"), true},
+		"not-equal":          {[]rune("hello"), []rune("world"), false},
+		"not-equal-diff-len": {[]rune("hello"), []rune("good bye!"), false},
+		"empty":              {[]rune{}, []rune{}, true},
+		"nil":                {nil, nil, true},
+	}
+
+	for testName, tt := range testData {
+		t.Run(testName, func(t *testing.T) {
+			require.Equal(t, tt.ExpectEqual, runeEqual(tt.A, tt.B))
+		})
+	}
+}
+
+func TestRuneWidth(t *testing.T) {
+	testData := map[string]struct {
+		S             []rune
+		ExpectedWidth int
+	}{
+		"simple":             {[]rune("abc"), 3},
+		"empty":              {[]rune{}, 0},
+		"simple-with-tab":    {[]rune("hello\tworld!"), 19},
+		"chinese-characters": {[]rune("例子"), 4},
+		"mixed-characters":   {[]rune("hello例world子!"), 15},
+	}
+
+	for testName, tt := range testData {
+		t.Run(testName, func(t *testing.T) {
+			require.Equal(t, tt.ExpectedWidth, runeWidth(tt.S))
 		})
 	}
 }
