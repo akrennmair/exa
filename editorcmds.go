@@ -11,6 +11,7 @@ import (
 
 func (e *editor) gotoBOL() {
 	curBuf := e.bufs[e.bufIdx]
+	log.Printf("gotoBOL: line %d set x = 0", curBuf.curLineIdx())
 	curBuf.x = 0
 	e.updateSelectedTextPos(curBuf)
 	curBuf.historyFinishOp()
@@ -23,6 +24,8 @@ func (e *editor) gotoEOL() {
 
 	curBuf.x = len(curLine)
 
+	log.Printf("gotoEOL: line %d set x = %d", curBuf.curLineIdx(), curBuf.x)
+
 	e.updateSelectedTextPos(curBuf)
 
 	curBuf.historyFinishOp()
@@ -30,10 +33,10 @@ func (e *editor) gotoEOL() {
 
 func (e *editor) newLine() {
 	curBuf := e.bufs[e.bufIdx]
-	lineIdx := curBuf.y + curBuf.offset
+	lineIdx := curBuf.curLineIdx()
 
 	curLine, nextLine := curBuf.lines[lineIdx][:curBuf.x], curBuf.lines[lineIdx][curBuf.x:]
-	log.Printf("newLine: %q -> %q, %q", string(curBuf.lines[lineIdx]), string(curLine), string(nextLine))
+	log.Printf("newLine: line %d: %q -> %q, %q", lineIdx, string(curBuf.lines[lineIdx]), string(curLine), string(nextLine))
 	curBuf.lines[lineIdx] = curLine
 	curBuf.lines = append(curBuf.lines[:lineIdx+1], append([][]rune{nextLine}, curBuf.lines[lineIdx+1:]...)...)
 
@@ -48,13 +51,15 @@ func (e *editor) newLine() {
 
 func (e *editor) keyBackspace() {
 	curBuf := e.bufs[e.bufIdx]
-	lineIdx := curBuf.y + curBuf.offset
+	lineIdx := curBuf.curLineIdx()
 
 	if curBuf.x == 0 {
 		if lineIdx == 0 {
-			// nothing that can be done as we're on the leftmost character on the first line.
+			log.Printf("keyBackspace: nothing to do as we're on the leftmost character on the first line")
 			return
 		}
+
+		log.Printf("keyBackspace: joining line %d with previous line", lineIdx)
 
 		curBuf.x = len(curBuf.lines[lineIdx-1])
 		curBuf.lines[lineIdx-1] = append(curBuf.lines[lineIdx-1], curBuf.lines[lineIdx]...)
@@ -68,6 +73,8 @@ func (e *editor) keyBackspace() {
 
 	r := curBuf.lines[lineIdx][curBuf.x-1]
 
+	log.Printf("keyBackspace: deleting character %c in line %d col %d", r, lineIdx, curBuf.x-1)
+
 	curBuf.lines[lineIdx] = append(curBuf.lines[lineIdx][:curBuf.x-1], curBuf.lines[lineIdx][curBuf.x:]...)
 	curBuf.x--
 	curBuf.historyRemoveChar(r)
@@ -75,13 +82,15 @@ func (e *editor) keyBackspace() {
 
 func (e *editor) keyDel() {
 	curBuf := e.bufs[e.bufIdx]
-	lineIdx := curBuf.y + curBuf.offset
+	lineIdx := curBuf.curLineIdx()
 
 	if curBuf.x == len(curBuf.lines[lineIdx]) {
 		if lineIdx == len(curBuf.lines)-1 {
-			// nothing that can be done, as we're on the last character on the last line
+			log.Printf("keyDel: nothing to do as we're on the last character on the last line")
 			return
 		}
+
+		log.Printf("keyDel: joining line %d with next line", lineIdx)
 
 		curBuf.lines[lineIdx] = append(curBuf.lines[lineIdx], curBuf.lines[lineIdx+1]...)
 		curBuf.lines = append(curBuf.lines[:lineIdx+1], curBuf.lines[lineIdx+2:]...)
@@ -91,6 +100,8 @@ func (e *editor) keyDel() {
 
 	r := curBuf.lines[lineIdx][curBuf.x]
 
+	log.Printf("keyDel: deleting character %c in line %d col %d", r, lineIdx, curBuf.x)
+
 	curBuf.lines[lineIdx] = append(curBuf.lines[lineIdx][:curBuf.x], curBuf.lines[lineIdx][curBuf.x+1:]...)
 	curBuf.historyRemoveChar(r)
 }
@@ -98,13 +109,16 @@ func (e *editor) keyDel() {
 func (e *editor) keyUp() {
 	curBuf := e.bufs[e.bufIdx]
 
-	if (curBuf.y + curBuf.offset) == 0 {
+	if (curBuf.curLineIdx()) == 0 {
+		log.Printf("keyUp: in first line already")
 		return
 	}
 
 	curBuf.decrY()
 
 	curBuf.correctX()
+
+	log.Printf("keyUp: y = %d offset = %d x = %d", curBuf.y, curBuf.offset, curBuf.x)
 
 	e.updateSelectedTextPos(curBuf)
 
@@ -115,6 +129,7 @@ func (e *editor) keyDown() {
 	curBuf := e.bufs[e.bufIdx]
 
 	if (curBuf.y + curBuf.offset) >= len(curBuf.lines)-1 {
+		log.Printf("keyDown: in last line already")
 		return
 	}
 
@@ -123,6 +138,8 @@ func (e *editor) keyDown() {
 	curBuf.incrY(height)
 
 	curBuf.correctX()
+
+	log.Printf("keyDown: y = %d offset = %d x = %d", curBuf.y, curBuf.offset, curBuf.x)
 
 	e.updateSelectedTextPos(curBuf)
 
@@ -136,6 +153,8 @@ func (e *editor) keyLeft() {
 		curBuf.x--
 	}
 
+	log.Printf("keyLeft: line %d x = %d", curBuf.curLineIdx(), curBuf.x)
+
 	e.updateSelectedTextPos(curBuf)
 
 	curBuf.historyFinishOp()
@@ -148,22 +167,28 @@ func (e *editor) keyRight() {
 		curBuf.x++
 	}
 
+	log.Printf("keyLeft: line %d x = %d", curBuf.curLineIdx(), curBuf.x)
+
 	e.updateSelectedTextPos(curBuf)
 
 	curBuf.historyFinishOp()
 }
 
 func (e *editor) quit() {
+	log.Printf("quit: %d buffers to check", len(e.bufs))
 	for i := 0; i < len(e.bufs); i++ {
 		e.bufIdx = i
 		if e.bufs[e.bufIdx].modified {
+			log.Printf("quit: buffer %d (file %q) is modified", e.bufIdx, e.bufs[e.bufIdx].fname)
 			e.redrawScreen()
 			switch e.query("Save file?", "ync") {
 			case 'y':
 				e.save()
 			case 'n':
+				log.Printf("quit: ignoring buffer")
 				// ignore file.
 			case 'c':
+				log.Printf("quit: cancelled quitting")
 				return // cancel quitting.
 			}
 		}
@@ -176,9 +201,12 @@ func (e *editor) quit() {
 func (e *editor) save() {
 	curBuf := e.bufs[e.bufIdx]
 
+	log.Printf("save: saving buffer %d (%q)", e.bufIdx, curBuf.fname)
+
 	if curBuf.fname == "" {
 		fname, ok := e.readString("Filename", nil)
 		if !ok {
+			log.Printf("save: cancelled entering filename")
 			return
 		}
 
@@ -191,8 +219,11 @@ func (e *editor) save() {
 func (e *editor) saveAs() {
 	curBuf := e.bufs[e.bufIdx]
 
+	log.Printf("saveAs: saving buffer %d under new name", e.bufIdx)
+
 	fname, ok := e.readString("New filename", nil)
 	if !ok {
+		log.Printf("saveAs: cancelled entering filename")
 		return
 	}
 
@@ -202,6 +233,7 @@ func (e *editor) saveAs() {
 		case 'y':
 			// continue as normal
 		case 'n':
+			log.Printf("saveAs: cancelled overwriting existing file")
 			return
 		}
 	}
@@ -216,6 +248,7 @@ func (e *editor) nextBuffer() {
 	if e.bufIdx >= len(e.bufs) {
 		e.bufIdx = 0
 	}
+	log.Printf("nextBuffer: new bufIdx = %d", e.bufIdx)
 }
 
 func (e *editor) prevBuffer() {
@@ -223,16 +256,21 @@ func (e *editor) prevBuffer() {
 	if e.bufIdx < 0 {
 		e.bufIdx = len(e.bufs) - 1
 	}
+	log.Printf("prevBuffer: new bufIdx = %d", e.bufIdx)
 }
 
 func (e *editor) deleteToEOL() {
 	curBuf := e.bufs[e.bufIdx]
+
+	log.Printf("deleteToEOL: line %d x = %d", curBuf.curLineIdx(), curBuf.x)
 
 	curBuf.lines[curBuf.curLineIdx()] = curBuf.curLine()[:curBuf.x]
 }
 
 func (e *editor) deleteFromBOL() {
 	curBuf := e.bufs[e.bufIdx]
+
+	log.Printf("deleteFromBOL: line %d x = %d", curBuf.curLineIdx(), curBuf.x)
 
 	curBuf.lines[curBuf.curLineIdx()] = curBuf.curLine()[curBuf.x:]
 	curBuf.x = 0
@@ -244,9 +282,9 @@ func (e *editor) selectText() {
 	if !curBuf.selecting {
 		curBuf.startX, curBuf.startY = curBuf.x, curBuf.curLineIdx()
 		curBuf.endX, curBuf.endY = curBuf.startX, curBuf.startY
-		log.Printf("Started selecting text from %d/%d", curBuf.startY, curBuf.startX)
+		log.Printf("selectText: starting from %d/%d", curBuf.startY, curBuf.startX)
 	} else {
-		log.Printf("Stopped selecting text at %d/%d", curBuf.endY, curBuf.endX)
+		log.Printf("selectText: stopped at %d/%d", curBuf.endY, curBuf.endX)
 	}
 
 	curBuf.selecting = !curBuf.selecting
@@ -279,9 +317,15 @@ func (e *editor) copyText() {
 	}
 
 	e.clipboard = copiedData
+
+	log.Printf("copyText: copied data to clipboard")
+	for idx, line := range e.clipboard {
+		log.Printf("copyText: clipboard line %d: %s", idx, string(line))
+	}
 }
 
 func (e *editor) cutText() {
+	log.Printf("cutText: calling copyText first")
 	e.copyText()
 
 	curBuf := e.bufs[e.bufIdx]
@@ -302,12 +346,15 @@ func (e *editor) cutText() {
 	curBuf.x = newX
 
 	curBuf.modified = true
+
+	log.Printf("cutText: removed selected text")
 }
 
 func (e *editor) pasteText() {
 	insertion := [][]rune{}
 	insertion = append(insertion, e.clipboard...)
 
+	log.Printf("pasteText: inserting data from clipboard")
 	for idx, line := range insertion {
 		log.Printf("pasteText: clipboard %d = %s", idx, string(line))
 	}
@@ -351,6 +398,8 @@ func (e *editor) pageDown() {
 	}
 
 	curBuf.correctX()
+
+	log.Printf("pageDown: new line %d x = %d", curBuf.curLineIdx(), curBuf.x)
 }
 
 func (e *editor) pageUp() {
@@ -366,12 +415,16 @@ func (e *editor) pageUp() {
 	}
 
 	curBuf.correctX()
+
+	log.Printf("pageUp: new line %d x = %d", curBuf.curLineIdx(), curBuf.x)
+
 }
 
 func (e *editor) undo() {
 	curBuf := e.bufs[e.bufIdx]
 
 	if curBuf.historyIdx < 0 {
+		log.Printf("undo: nothing to undo")
 		e.showError("Already at oldest change")
 		return
 	}
@@ -395,6 +448,7 @@ func (e *editor) redo() {
 	curBuf := e.bufs[e.bufIdx]
 
 	if curBuf.historyIdx == len(curBuf.editHistory)-1 {
+		log.Printf("redo: nothing to redo")
 		e.showError("Already at newest change")
 		return
 	}
@@ -413,6 +467,7 @@ func (e *editor) redo() {
 }
 
 func (e *editor) showHelp() {
+	log.Printf("showHelp: showing help")
 	e.scr.Clear()
 
 	width, _ := e.scr.Size()
@@ -461,24 +516,30 @@ func (e *editor) showHelp() {
 func (e *editor) openFile() {
 	file, ok := e.readString("Filename", nil)
 	if !ok {
+		log.Printf("openFile: entering filename cancelled")
 		return
 	}
 
 	if err := e.loadBufferFromFile(file); err != nil {
+		log.Printf("openFile: loading file %q failed: %v", file, err)
 		e.showError("Couldn't open file: %v", err)
 		return
 	}
 
 	e.bufIdx = len(e.bufs) - 1
+
+	log.Printf("openFile: loaded file %q to buffer %d", file, e.bufIdx)
 }
 
 func (e *editor) newBuffer() {
 	e.addNewBuffer()
 	e.bufIdx = len(e.bufs) - 1
+	log.Printf("newBuffer: added empty buffer")
 }
 
 func (e *editor) closeBuffer() {
 	if len(e.bufs) == 1 {
+		log.Printf("closeBuffer: can't close last remaining buffer")
 		e.showError("Can't close last remaining buffer")
 		return
 	}
@@ -491,9 +552,12 @@ func (e *editor) closeBuffer() {
 		case 'n':
 			// nothing to do
 		case 'c':
+			log.Printf("closeBuffer: cancelled closing buffer")
 			return // cancel closing
 		}
 	}
+
+	log.Printf("closeBuffer: closed buffer at index %d", e.bufIdx)
 
 	e.bufs = append(e.bufs[:e.bufIdx], e.bufs[e.bufIdx+1:]...)
 	if e.bufIdx >= len(e.bufs) {
@@ -508,16 +572,22 @@ func (e *editor) find() {
 
 	findPhrase, ok := e.readString("Find", curBuf.findPhrase)
 	if !ok {
+		log.Printf("find: entering search phrase cancelled")
 		return
 	}
+
+	log.Printf("find: searching for phrase %q", findPhrase)
 
 	curBuf.findPhrase = []rune(findPhrase)
 
 	y, x, found := curBuf.find([]rune(findPhrase))
 	if !found {
+		log.Printf("find: phrase %q not found", findPhrase)
 		e.showError("Text not found")
 		return
 	}
+
+	log.Printf("find: found phrase %q at line %d col %d", findPhrase, y, x)
 
 	curBuf.x = x
 	for y > curBuf.curLineIdx() {
@@ -529,5 +599,6 @@ func (e *editor) find() {
 }
 
 func (e *editor) redraw() {
+	log.Printf("redraw: syncing whole screen")
 	e.scr.Sync()
 }

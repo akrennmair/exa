@@ -83,11 +83,14 @@ func (e *editor) inputLoop() {
 
 func (e *editor) handleEvent() {
 	evt := e.scr.PollEvent()
+	log.Printf("handleEvent: received event of type %T", evt)
 	switch ev := evt.(type) {
 	case *tcell.EventResize:
+		width, height := ev.Size()
+		log.Printf("handleEvent: resize event: %dx%d", width, height)
 		return
 	case *tcell.EventKey:
-		log.Printf("event key: %v rune = %d mod = %b", ev.Key(), ev.Rune(), ev.Modifiers())
+		log.Printf("handleEvent: key: %v rune = %d mod = %b", ev.Key(), ev.Rune(), ev.Modifiers())
 		for _, op := range e.ops {
 			if ev.Key() == op.Key {
 				op.Func()
@@ -144,6 +147,8 @@ func (e *editor) addNewBuffer() {
 }
 
 func (e *editor) handleInput(r rune) {
+	log.Printf("handleInput: rune = %c", r)
+
 	curBuf := e.bufs[e.bufIdx]
 	lineIdx := curBuf.y + curBuf.offset
 	curLine := curBuf.lines[lineIdx]
@@ -164,8 +169,12 @@ func (e *editor) handleInput(r rune) {
 
 func (e *editor) saveFile(curBuf *buffer) {
 	tmpName := filepath.Join(filepath.Dir(curBuf.fname), fmt.Sprintf(".tmp%x", time.Now().UnixNano()))
+
+	log.Printf("saveFile: saving buffer of %d lines to %s (temporary file: %s)", len(curBuf.lines), curBuf.fname, tmpName)
+
 	f, err := os.OpenFile(tmpName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
+		log.Printf("saveFile: opening temporary file %s failed: %v", tmpName, err)
 		e.showError("Failed to open temporary file: %v", err)
 		return
 	}
@@ -174,16 +183,19 @@ func (e *editor) saveFile(curBuf *buffer) {
 	w := bufio.NewWriter(f)
 	for _, line := range curBuf.lines {
 		if _, err := w.WriteString(string(line) + "\n"); err != nil {
+			log.Printf("saveFile: writing to temporary file failed: %v", err)
 			e.showError("Failed to write to temporary file: %v", err)
 			return
 		}
 	}
 	if err := w.Flush(); err != nil {
+		log.Printf("saveFile: Flush failed: %v", err)
 		e.showError("Failed to write file content: %v", err)
 		return
 	}
 
 	if err := os.Rename(tmpName, curBuf.fname); err != nil {
+		log.Printf("saveFile: Rename failed: %v", err)
 		e.showError("Failed to replace %s with temporary file %s: %v", curBuf.fname, tmpName, err)
 		return
 	}
@@ -194,7 +206,7 @@ func (e *editor) saveFile(curBuf *buffer) {
 func (e *editor) updateSelectedTextPos(buf *buffer) {
 	if buf.selecting {
 		buf.endX, buf.endY = buf.x, buf.offset+buf.y
-		log.Printf("Updated selection end point at %d/%d", buf.endY, buf.endX)
+		log.Printf("updateSelectedTextPos: new selection end point at %d/%d", buf.endY, buf.endX)
 	}
 }
 
@@ -213,6 +225,8 @@ func (e *editor) showError(s string, args ...interface{}) {
 }
 
 func (e *editor) readString(prompt string, inputRunes []rune) (input string, ok bool) {
+	log.Printf("readString: prompt %q, initial text %q", prompt, string(inputRunes))
+
 	cursorPos := len(inputRunes)
 
 	defer func() {
@@ -270,8 +284,11 @@ func (e *editor) readString(prompt string, inputRunes []rune) (input string, ok 
 
 			switch ev.Key() {
 			case tcell.KeyCR:
-				return string(inputRunes), true
+				s := string(inputRunes)
+				log.Printf("readString: returning %q", s)
+				return s, true
 			case tcell.KeyESC, tcell.KeyCtrlG:
+				log.Printf("readString: cancelled input")
 				return "", false
 			case tcell.KeyLeft:
 				if cursorPos > 0 {
@@ -309,6 +326,7 @@ func (e *editor) readString(prompt string, inputRunes []rune) (input string, ok 
 }
 
 func (e *editor) query(prompt string, validAnswers string) rune {
+	log.Printf("query: prompt %q valid answers: %q", prompt, validAnswers)
 	defer func() {
 		width, height := e.scr.Size()
 		e.clearLine(height-1, width, tcell.StyleDefault)
@@ -342,6 +360,7 @@ func (e *editor) query(prompt string, validAnswers string) rune {
 			if ev.Key() == tcell.KeyRune {
 				for _, r := range validAnswers {
 					if r == ev.Rune() {
+						log.Printf("query: returning %c", r)
 						return r
 					}
 				}
@@ -352,6 +371,8 @@ func (e *editor) query(prompt string, validAnswers string) rune {
 
 func (e *editor) redrawScreen() {
 	width, height := e.scr.Size()
+
+	log.Printf("redrawScreen: %dx%d", width, height)
 
 	curBuf := e.bufs[e.bufIdx]
 

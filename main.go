@@ -35,6 +35,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	width, height := scr.Size()
+	log.Printf("Created new screen %dx%d charset = %s", width, height, scr.CharacterSet())
+
 	ed := newEditor(scr)
 
 	for _, arg := range flag.Args() {
@@ -42,10 +45,12 @@ func main() {
 			fmt.Printf("Failed to load file %s: %v\n", arg, err)
 			os.Exit(1)
 		}
+		log.Printf("Loaded file %s into new buffer", arg)
 	}
 
 	if len(flag.Args()) == 0 {
 		ed.addNewBuffer()
+		log.Printf("No files provided, created empty buffer")
 	}
 
 	if err := scr.Init(); err != nil {
@@ -54,5 +59,8 @@ func main() {
 	}
 	defer scr.Fini()
 
+	log.Printf("Starting editor input loop...")
 	ed.inputLoop()
+
+	log.Printf("Quitting")
 }
