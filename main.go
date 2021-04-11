@@ -35,7 +35,13 @@ func main() {
 		log.SetOutput(f)
 	}
 
-	ed := &editor{}
+	scr, err := tcell.NewScreen()
+	if err != nil {
+		fmt.Printf("Couldn't create new screen: %v\n", err)
+		os.Exit(1)
+	}
+
+	ed := newEditor(scr)
 
 	for _, arg := range flag.Args() {
 		if err := ed.loadBufferFromFile(arg); err != nil {
@@ -48,23 +54,21 @@ func main() {
 		ed.addNewBuffer()
 	}
 
-	scr, err := tcell.NewScreen()
-	if err != nil {
-		fmt.Printf("Couldn't create new screen: %v\n", err)
-		os.Exit(1)
-	}
-
 	if err := scr.Init(); err != nil {
 		fmt.Printf("Couldn't init screen: %v\n", err)
 		os.Exit(1)
 	}
 	defer scr.Fini()
 
-	ed.scr = scr
+	ed.inputLoop()
+}
 
-	scr.EnableMouse(tcell.MouseMotionEvents)
+func newEditor(scr tcell.Screen) *editor {
+	ed := &editor{
+		scr: scr,
+	}
 
-	ops := []keyMapping{
+	ed.ops = []keyMapping{
 		{tcell.KeyCtrlSpace, ed.selectText, "start/stop selecting text"},
 		{tcell.KeyCtrlA, ed.gotoBOL, "go to beginning of line"},
 		{tcell.KeyCtrlB, ed.newBuffer, "create new buffer"},
@@ -97,41 +101,7 @@ func main() {
 		{tcell.KeyDelete, ed.keyDel, "delete character right from cursor"},
 	}
 
-	ed.ops = ops
-
-	for {
-		ed.redrawScreen()
-
-		if ed.quitInputLoop {
-			break
-		}
-
-		evt := scr.PollEvent()
-		switch e := evt.(type) {
-		case *tcell.EventResize:
-			continue
-		case *tcell.EventKey:
-			log.Printf("event key: %v rune = %d mod = %b", e.Key(), e.Rune(), e.Modifiers())
-			matched := false
-			for _, op := range ops {
-				if e.Key() == op.Key {
-					op.Func()
-					matched = true
-					break
-				}
-			}
-			if matched {
-				continue
-			}
-
-			if e.Key() == tcell.KeyRune || e.Key() == tcell.KeyTAB {
-				ed.handleInput(e.Rune())
-			}
-		case *tcell.EventMouse:
-			x, y := e.Position()
-			log.Printf("mouse event: buttons = %b modifiers = %b y/x = %d/%d", e.Buttons(), e.Modifiers(), y, x)
-		}
-	}
+	return ed
 }
 
 type keyMapping struct {
@@ -147,6 +117,38 @@ type editor struct {
 	quitInputLoop bool
 	clipboard     [][]rune
 	ops           []keyMapping
+}
+
+func (e *editor) inputLoop() {
+	for {
+		e.redrawScreen()
+
+		if e.quitInputLoop {
+			break
+		}
+
+		e.handleEvent()
+	}
+}
+
+func (e *editor) handleEvent() {
+	evt := e.scr.PollEvent()
+	switch ev := evt.(type) {
+	case *tcell.EventResize:
+		return
+	case *tcell.EventKey:
+		log.Printf("event key: %v rune = %d mod = %b", ev.Key(), ev.Rune(), ev.Modifiers())
+		for _, op := range e.ops {
+			if ev.Key() == op.Key {
+				op.Func()
+				return
+			}
+		}
+
+		if ev.Key() == tcell.KeyRune || ev.Key() == tcell.KeyTAB {
+			e.handleInput(ev.Rune())
+		}
+	}
 }
 
 func (e *editor) loadBufferFromFile(fn string) error {
