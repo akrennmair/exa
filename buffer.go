@@ -237,17 +237,24 @@ func (op *editOp) redo(buf *buffer) {
 }
 
 func (op *editOp) removeText(buf *buffer) {
+	for idx, line := range buf.lines {
+		log.Printf("removeText: before: line %d: %q", idx, string(line))
+	}
+	log.Printf("removeText: op: y = %d x = %d len(op.text) = %d", op.y, op.x, len(op.text))
+	for idx, line := range op.text {
+		log.Printf("removeText: op buf line %d: %q", idx, string(line))
+	}
 	if len(op.text) == 1 {
 		buf.lines[op.y] = append(buf.lines[op.y][:op.x], buf.lines[op.y][op.x+len(op.text[0]):]...)
 	} else {
-		buf.lines[op.y] = buf.lines[op.y][:op.x]
-		buf.lines = append(buf.lines[:op.y+1], buf.lines[op.y+len(op.text)-1:]...)
-		lastLine := buf.lines[op.y+1][len(op.text[len(op.text)-1]):]
-		if len(lastLine) > 0 {
-			buf.lines[op.y+1] = lastLine
-		} else {
-			buf.lines = append(buf.lines[:op.y+1], buf.lines[op.y+2:]...)
-		}
+		log.Printf("removeText: before part: %d %d %q", op.y, op.x, string(buf.lines[op.y][:op.x]))
+		log.Printf("removeText: after part: %d %d %q", op.y+len(op.text)-1, len(op.text[len(op.text)-1]), string(buf.lines[op.y+len(op.text)-1][len(op.text[len(op.text)-1:])]))
+		buf.lines[op.y] = append(buf.lines[op.y][:op.x], buf.lines[op.y+len(op.text)-1][len(op.text[len(op.text)-1]):]...)
+		log.Printf("removeText: new line %d: %q", op.y, string(buf.lines[op.y]))
+		buf.lines = append(buf.lines[:op.y+1], buf.lines[op.y+len(op.text):]...)
+	}
+	for idx, line := range buf.lines {
+		log.Printf("removeText: after: line %d: %q", idx, string(line))
 	}
 }
 
@@ -258,7 +265,7 @@ func (op *editOp) insertText(buf *buffer) {
 		insertion := [][]rune{}
 		insertion = append(insertion, op.text...)
 
-		beforeInsertion, afterInsertion := buf.lines[op.y][:buf.x], buf.lines[op.y][buf.x:]
+		beforeInsertion, afterInsertion := buf.lines[op.y][:op.x], buf.lines[op.y][op.x:]
 		insertion[0] = append(append([]rune{}, beforeInsertion...), insertion[0]...)
 		insertion[len(insertion)-1] = append(insertion[len(insertion)-1], afterInsertion...)
 

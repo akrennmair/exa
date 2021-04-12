@@ -42,11 +42,10 @@ func (e *editor) newLine() {
 
 	_, height := e.scr.Size()
 
-	curBuf.incrY(height)
-
-	curBuf.correctX()
-
 	curBuf.historyAddLine()
+
+	curBuf.incrY(height)
+	curBuf.x = 0
 }
 
 func (e *editor) keyBackspace() {
