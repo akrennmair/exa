@@ -10,4 +10,4 @@ intention of ever turning this into anything serious.
 
 ## License
 
-See the file ´LICENSE` for licensing information.
+See the file `LICENSE` for licensing information.
